@@ -4,13 +4,15 @@ import { themes as prismThemes } from "prism-react-renderer";
 
 const org = "wavesMeetU";
 const project = "stratum-map";
+// GitHub Pages canonical host is lowercase; keeps sitemap/robots aligned with live URLs.
+const githubPagesOrigin = "https://wavesmeetu.github.io";
 
 const config: Config = {
   title: "stratum-map",
   tagline: "GPU-first WebGPU renderer for high-performance browser maps.",
   favicon: "img/favicon.svg",
 
-  url: `https://${org}.github.io`,
+  url: githubPagesOrigin,
   baseUrl: `/${project}/`,
 
   organizationName: org,

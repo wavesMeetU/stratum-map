@@ -1,6 +1,16 @@
 # stratum-map documentation site
 
-Docusaurus project for **https://wavesMeetU.github.io/stratum-map/** (configure **GitHub Pages → GitHub Actions** in repository settings).
+Docusaurus project for **https://wavesmeetu.github.io/stratum-map/** (configure **GitHub Pages → GitHub Actions** in repository settings).
+
+## Google Search Console
+
+Use a **URL-prefix** property that matches the live site (not the `github.com` repo URL), for example **`https://wavesmeetu.github.io/stratum-map`**.
+
+Submit the sitemap as the full URL (after a production build / deploy):
+
+**`https://wavesmeetu.github.io/stratum-map/sitemap.xml`**
+
+If the UI mis-reports the sitemap, confirm the property prefix matches the host and path above, then use **URL inspection** on that exact sitemap URL.
 
 ## Commands
 

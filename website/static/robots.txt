@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://wavesMeetU.github.io/stratum-map/sitemap.xml
+Sitemap: https://wavesmeetu.github.io/stratum-map/sitemap.xml
