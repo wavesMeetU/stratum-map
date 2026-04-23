@@ -13,3 +13,23 @@ export type {
   ParserInput,
 } from "./parser/parser.js";
 export type { Renderer, RenderFrame } from "./renderer/renderer.js";
+export type {
+  GeoJsonParseChunkPayload,
+  GeoJsonParseOptions,
+  GeoJsonParseSummary,
+} from "./client/geojson-worker-client.js";
+export { GeoJsonWorkerClient, createGeoJsonWorkerClient } from "./client/geojson-worker-client.js";
+export type {
+  GeoJsonWorkerChunkMessage,
+  GeoJsonWorkerDoneMessage,
+  GeoJsonWorkerErrorMessage,
+  GeoJsonWorkerEvent,
+  GeoJsonWorkerFeatureRecord,
+  GeoJsonWorkerRequest,
+} from "./parser/geojson-worker-messages.js";
+export { geometryBufferViewFromChunkMessage } from "./parser/geojson-chunk.js";
+export {
+  countVertices,
+  geometryKindFor,
+  writeFlattenedGeometry,
+} from "./parser/geojson-flatten.js";
