@@ -78,6 +78,50 @@ export {
   geometryKindForGeoArrowData,
 } from "./geoarrow/geoarrow-adapter.js";
 export type {
+  TextLabel,
+  TextLabelAnchor,
+  TextViewState,
+  GlyphUv,
+  GlyphMetrics,
+  IGlyphAtlas,
+  AtlasFamily,
+} from "./text/text-types.js";
+export {
+  TEXT_INSTANCE_FLOAT_STRIDE,
+  TEXT_FRAME_UNIFORM_BYTE_LENGTH,
+} from "./text/text-types.js";
+export { layoutTextLabels } from "./text/text-layout.js";
+export type { LayoutTextOptions } from "./text/text-layout.js";
+export { GlyphAtlas } from "./text/glyph-atlas.js";
+export { MsdfGlyphAtlas, tryLoadMsdfAtlasFromUrls } from "./text/msdf-glyph-atlas.js";
+export {
+  parseMsdfAtlasJson,
+  type MsdfAtlasJsonV1,
+  type MsdfAtlasGlyphJson,
+} from "./text/msdf-atlas-loader.js";
+export { isWasmMsdfAtlasAvailable, generateMsdfAtlasWasm } from "./text/msdf-wasm-stub.js";
+export { TextRenderer } from "./text/text-renderer.js";
+export type { TextRendererOptions } from "./text/text-renderer.js";
+export {
+  TextLayer,
+  createTextLayer,
+  createTextLayerForPointsRenderer,
+} from "./text/text-layer.js";
+export type { TextLayerOptions } from "./text/text-layer.js";
+export {
+  declutterLabels,
+  estimateLabelTextMetrics,
+  projectMapAnchorToScreenPx,
+} from "./text/label-declutter.js";
+export type {
+  DeclutterDebugRects,
+  DeclutterOptions,
+  DeclutterResult,
+  DeclutterStats,
+  ScreenRect,
+} from "./text/label-declutter.js";
+export { TEXT_WGSL } from "./text/shaders/text-wgsl.js";
+export type {
   FlattenGeoArrowChunkOptions,
   FlattenGeoArrowChunkResult,
   FlattenGeoArrowVectorOptions,

@@ -1,6 +1,5 @@
 import type { GeometryBufferView } from "../core/geometry-buffer.js";
 import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
-import { alignTo4Bytes } from "../gpu/byte-align.js";
 import { GpuBufferPool } from "../gpu/gpu-buffer-pool.js";
 import { GpuPointChunkSlot } from "../gpu/gpu-point-chunk-slot.js";
 import { decodeFeatureIdFromRgba8Bytes } from "../picking/id-pack.js";
@@ -35,7 +34,7 @@ export interface IngestTransferredWorkerChunkOptions {
 }
 
 /**
- * WebGPU point renderer: `point-list`, circular sprites, small style table.
+ * WebGPU point renderer: instanced triangle quads (circular sprites), small style table.
  * Pass a **column-major** 4×4 map→clip matrix each frame (typical OpenLayers WebGL-style frame).
  */
 export class WebGpuPointsRenderer {
@@ -47,9 +46,12 @@ export class WebGpuPointsRenderer {
   private readonly frameUniformBuffer: GPUBuffer;
   private readonly styleStorageBuffer: GPUBuffer;
   private readonly bindGroup: GPUBindGroup;
+  /** Shared unit quad (two triangles); drawn with `draw(6, instanceCount)` for each point. */
+  private readonly quadVertexBuffer: GPUBuffer;
   private readonly frameUniformStaging = new ArrayBuffer(FRAME_UNIFORM_BYTE_LENGTH);
   private readonly frameF32 = new Float32Array(this.frameUniformStaging, 0, 16);
-  private readonly frameU32 = new Uint32Array(this.frameUniformStaging, 64, 4);
+  private readonly frameViewport = new Float32Array(this.frameUniformStaging, 64, 2);
+  private readonly frameU32 = new Uint32Array(this.frameUniformStaging, 80, 4);
 
   private positionBuffer: GPUBuffer | null = null;
   private styleIdBuffer: GPUBuffer | null = null;
@@ -94,6 +96,7 @@ export class WebGpuPointsRenderer {
     frameUniformBuffer: GPUBuffer,
     styleStorageBuffer: GPUBuffer,
     bindGroup: GPUBindGroup,
+    quadVertexBuffer: GPUBuffer,
     initialStyles: readonly PointStyle[],
   ) {
     this.canvas = canvas;
@@ -104,6 +107,7 @@ export class WebGpuPointsRenderer {
     this.frameUniformBuffer = frameUniformBuffer;
     this.styleStorageBuffer = styleStorageBuffer;
     this.bindGroup = bindGroup;
+    this.quadVertexBuffer = quadVertexBuffer;
     this.setStyleTable(initialStyles.length > 0 ? initialStyles : [DEFAULT_POINT_STYLE]);
   }
 
@@ -128,6 +132,15 @@ export class WebGpuPointsRenderer {
 
     const format = navigator.gpu.getPreferredCanvasFormat();
     const pipeline = WebGpuPointsRenderer.createPipeline(device, format);
+
+    const quadCorners = new Float32Array([
+      -1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1,
+    ]);
+    const quadVertexBuffer = device.createBuffer({
+      size: quadCorners.byteLength,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(quadVertexBuffer, 0, quadCorners);
 
     const frameUniformBuffer = device.createBuffer({
       size: FRAME_UNIFORM_BYTE_LENGTH,
@@ -156,6 +169,7 @@ export class WebGpuPointsRenderer {
       frameUniformBuffer,
       styleStorageBuffer,
       bindGroup,
+      quadVertexBuffer,
       options.styles ?? [DEFAULT_POINT_STYLE],
     );
 
@@ -179,9 +193,14 @@ export class WebGpuPointsRenderer {
             attributes: [{ shaderLocation: 0, offset: 0, format: "float32x2" }],
           },
           {
-            arrayStride: 2,
-            stepMode: "vertex",
-            attributes: [{ shaderLocation: 1, offset: 0, format: "uint16" }],
+            arrayStride: 8,
+            stepMode: "instance",
+            attributes: [{ shaderLocation: 1, offset: 0, format: "float32x2" }],
+          },
+          {
+            arrayStride: 4,
+            stepMode: "instance",
+            attributes: [{ shaderLocation: 2, offset: 0, format: "uint16" }],
           },
         ],
       },
@@ -207,7 +226,7 @@ export class WebGpuPointsRenderer {
         ],
       },
       primitive: {
-        topology: "point-list",
+        topology: "triangle-list",
       },
     });
   }
@@ -224,6 +243,55 @@ export class WebGpuPointsRenderer {
 
   getDevice(): GPUDevice {
     return this.device;
+  }
+
+  getCanvas(): HTMLCanvasElement {
+    return this.canvas;
+  }
+
+  getContext(): GPUCanvasContext {
+    return this.context;
+  }
+
+  getCanvasFormat(): GPUTextureFormat {
+    return this.format;
+  }
+
+  /**
+   * Records point draws into an existing render pass (same load/store as caller).
+   * Call after `setMapToClipMatrix` / `resize`; uploads frame uniforms then draws.
+   */
+  encodeRenderPass(pass: GPURenderPassEncoder, frame: RenderFrame): void {
+    this.frameF32.set(this.mapToClip);
+    this.frameViewport[0] = Math.max(this.canvas.width, 1);
+    this.frameViewport[1] = Math.max(this.canvas.height, 1);
+    this.frameU32[0] = this.styles.length;
+    this.frameU32[1] = 0;
+    this.frameU32[2] = 0;
+    this.frameU32[3] = 0;
+    this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformStaging);
+
+    pass.setPipeline(this.pipeline);
+    pass.setBindGroup(0, this.bindGroup);
+    if (this.geometryLayout === "chunks") {
+      for (const key of this.chunkDrawOrder) {
+        const chunk = this.chunkedChunks.get(key);
+        if (chunk === undefined || chunk.vertexCount <= 0) {
+          continue;
+        }
+        pass.setVertexBuffer(0, this.quadVertexBuffer, 0, 6 * 8);
+        pass.setVertexBuffer(1, chunk.positionBuffer, 0, chunk.vertexCount * 8);
+        pass.setVertexBuffer(2, chunk.styleIdBuffer, 0, chunk.vertexCount * 4);
+        pass.draw(6, chunk.vertexCount, 0, 0);
+      }
+    } else if (this.vertexCount > 0 && this.positionBuffer && this.styleIdBuffer) {
+      pass.setVertexBuffer(0, this.quadVertexBuffer, 0, 6 * 8);
+      pass.setVertexBuffer(1, this.positionBuffer, 0, this.vertexCount * 8);
+      pass.setVertexBuffer(2, this.styleIdBuffer, 0, this.vertexCount * 4);
+      pass.draw(6, this.vertexCount, 0, 0);
+    }
+
+    void frame.timeMs;
   }
 
   /**
@@ -398,7 +466,8 @@ export class WebGpuPointsRenderer {
 
     const pu = new ArrayBuffer(PICK_UNIFORM_BYTE_LENGTH);
     new Float32Array(pu, 0, 16).set(this.mapToClip);
-    new Float32Array(pu, 64, 4).set([this.pickPointDiameterPx, 0, 0, 0]);
+    new Float32Array(pu, 64, 2).set([Math.max(w, 1), Math.max(h, 1)]);
+    new Float32Array(pu, 80, 4).set([this.pickPointDiameterPx, 0, 0, 0]);
     this.device.queue.writeBuffer(this.pickUniformBuffer!, 0, pu);
 
     const encoder = this.device.createCommandEncoder();
@@ -415,7 +484,9 @@ export class WebGpuPointsRenderer {
 
     pass.setPipeline(this.pickPipeline!);
     pass.setBindGroup(0, this.pickBindGroup!);
-    pass.setViewport(ix, iy, 1, 1, 0, 1);
+    // Use the same NDC→pixel mapping as the main canvas pass; only scissor to 1×1.
+    // A 1×1 viewport would remap clip space and miss geometry that lines up on screen.
+    pass.setViewport(0, 0, w, h, 0, 1);
     pass.setScissorRect(ix, iy, 1, 1);
 
     if (this.geometryLayout === "chunks") {
@@ -424,14 +495,16 @@ export class WebGpuPointsRenderer {
         if (chunk === undefined || chunk.vertexCount <= 0) {
           continue;
         }
-        pass.setVertexBuffer(0, chunk.positionBuffer, 0, chunk.vertexCount * 8);
-        pass.setVertexBuffer(1, chunk.featureIdBuffer, 0, chunk.vertexCount * 4);
-        pass.draw(chunk.vertexCount, 1, 0, 0);
+        pass.setVertexBuffer(0, this.quadVertexBuffer, 0, 6 * 8);
+        pass.setVertexBuffer(1, chunk.positionBuffer, 0, chunk.vertexCount * 8);
+        pass.setVertexBuffer(2, chunk.featureIdBuffer, 0, chunk.vertexCount * 4);
+        pass.draw(6, chunk.vertexCount, 0, 0);
       }
     } else if (this.vertexCount > 0 && this.positionBuffer && this.featureIdBuffer) {
-      pass.setVertexBuffer(0, this.positionBuffer, 0, this.vertexCount * 8);
-      pass.setVertexBuffer(1, this.featureIdBuffer, 0, this.vertexCount * 4);
-      pass.draw(this.vertexCount, 1, 0, 0);
+      pass.setVertexBuffer(0, this.quadVertexBuffer, 0, 6 * 8);
+      pass.setVertexBuffer(1, this.positionBuffer, 0, this.vertexCount * 8);
+      pass.setVertexBuffer(2, this.featureIdBuffer, 0, this.vertexCount * 4);
+      pass.draw(6, this.vertexCount, 0, 0);
     }
 
     pass.end();
@@ -471,9 +544,14 @@ export class WebGpuPointsRenderer {
             attributes: [{ shaderLocation: 0, offset: 0, format: "float32x2" }],
           },
           {
+            arrayStride: 8,
+            stepMode: "instance",
+            attributes: [{ shaderLocation: 1, offset: 0, format: "float32x2" }],
+          },
+          {
             arrayStride: 4,
-            stepMode: "vertex",
-            attributes: [{ shaderLocation: 1, offset: 0, format: "uint32" }],
+            stepMode: "instance",
+            attributes: [{ shaderLocation: 2, offset: 0, format: "uint32" }],
           },
         ],
       },
@@ -483,7 +561,7 @@ export class WebGpuPointsRenderer {
         targets: [{ format: "rgba8unorm" }],
       },
       primitive: {
-        topology: "point-list",
+        topology: "triangle-list",
       },
     });
 
@@ -575,27 +653,13 @@ export class WebGpuPointsRenderer {
       buffer.positions.byteOffset,
       vertexCount * 8,
     );
-    const styleRawBytes = vertexCount * 2;
-    const styleWriteBytes = alignTo4Bytes(styleRawBytes);
-    if (buffer.styleIds.byteOffset + styleRawBytes > buffer.styleIds.buffer.byteLength) {
+    const styleGpuBytes = vertexCount * 4;
+    if (buffer.styleIds.byteOffset + vertexCount * 2 > buffer.styleIds.buffer.byteLength) {
       throw new Error("styleIds shorter than vertexCount (including padding)");
     }
-    if (buffer.styleIds.byteOffset + styleWriteBytes <= buffer.styleIds.buffer.byteLength) {
-      this.device.queue.writeBuffer(
-        this.styleIdBuffer!,
-        0,
-        buffer.styleIds.buffer,
-        buffer.styleIds.byteOffset,
-        styleWriteBytes,
-      );
-    } else {
-      const tmp = new Uint8Array(styleWriteBytes);
-      tmp.set(
-        new Uint8Array(buffer.styleIds.buffer, buffer.styleIds.byteOffset, styleRawBytes),
-        0,
-      );
-      this.device.queue.writeBuffer(this.styleIdBuffer!, 0, tmp.buffer, 0, styleWriteBytes);
-    }
+    const tmp = new Uint8Array(styleGpuBytes);
+    WebGpuPointsRenderer.packStyleIdsToGpuStride(buffer.styleIds, vertexCount, tmp);
+    this.device.queue.writeBuffer(this.styleIdBuffer!, 0, tmp.buffer, 0, styleGpuBytes);
     this.device.queue.writeBuffer(
       this.featureIdBuffer!,
       0,
@@ -603,6 +667,39 @@ export class WebGpuPointsRenderer {
       buffer.featureIds.byteOffset,
       vertexCount * 4,
     );
+  }
+
+  /**
+   * Re-upload style instance buffer only (`useSingleGeometryLayout()`).
+   * `styleIds.length` must be ≥ `vertexCount`; GPU stride is 4 bytes per vertex (uint16 + pad).
+   */
+  writeStyleIdsForSingleLayout(styleIds: Uint16Array, vertexCount: number): void {
+    if (this.geometryLayout !== "single") {
+      throw new Error("writeStyleIdsForSingleLayout requires useSingleGeometryLayout()");
+    }
+    if (vertexCount <= 0) {
+      return;
+    }
+    if (!this.styleIdBuffer || this.vertexCount !== vertexCount) {
+      throw new Error("writeStyleIdsForSingleLayout: call setGeometry first with the same vertexCount");
+    }
+    if (styleIds.length < vertexCount) {
+      throw new Error("styleIds shorter than vertexCount");
+    }
+    const styleGpuBytes = vertexCount * 4;
+    const tmp = new Uint8Array(styleGpuBytes);
+    WebGpuPointsRenderer.packStyleIdsToGpuStride(styleIds, vertexCount, tmp);
+    this.device.queue.writeBuffer(this.styleIdBuffer, 0, tmp.buffer, 0, styleGpuBytes);
+  }
+
+  /** Vertex buffer uses 4-byte instance stride: u16 style id + 2-byte pad per point. */
+  private static packStyleIdsToGpuStride(src: Uint16Array, vertexCount: number, out: Uint8Array): void {
+    for (let i = 0; i < vertexCount; i++) {
+      const v = src[i]!;
+      const o = i * 4;
+      out[o] = v & 0xff;
+      out[o + 1] = (v >> 8) & 0xff;
+    }
   }
 
   private ensureVertexCapacity(n: number): void {
@@ -615,7 +712,7 @@ export class WebGpuPointsRenderer {
       1024,
     );
     const posBytes = newCap * 8;
-    const styleBytes = alignTo4Bytes(newCap * 2);
+    const styleBytes = newCap * 4;
     const featBytes = newCap * 4;
 
     const pool = this.gpuBufferPool;
@@ -663,13 +760,6 @@ export class WebGpuPointsRenderer {
   }
 
   render(frame: RenderFrame): void {
-    this.frameF32.set(this.mapToClip);
-    this.frameU32[0] = this.styles.length;
-    this.frameU32[1] = 0;
-    this.frameU32[2] = 0;
-    this.frameU32[3] = 0;
-    this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformStaging);
-
     const textureView = this.context.getCurrentTexture().createView();
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
@@ -682,33 +772,14 @@ export class WebGpuPointsRenderer {
         },
       ],
     });
-
-    pass.setPipeline(this.pipeline);
-    pass.setBindGroup(0, this.bindGroup);
-    if (this.geometryLayout === "chunks") {
-      for (const key of this.chunkDrawOrder) {
-        const chunk = this.chunkedChunks.get(key);
-        if (chunk === undefined || chunk.vertexCount <= 0) {
-          continue;
-        }
-        pass.setVertexBuffer(0, chunk.positionBuffer, 0, chunk.vertexCount * 8);
-        pass.setVertexBuffer(1, chunk.styleIdBuffer, 0, chunk.vertexCount * 2);
-        pass.draw(chunk.vertexCount, 1, 0, 0);
-      }
-    } else if (this.vertexCount > 0 && this.positionBuffer && this.styleIdBuffer) {
-      pass.setVertexBuffer(0, this.positionBuffer, 0, this.vertexCount * 8);
-      pass.setVertexBuffer(1, this.styleIdBuffer, 0, this.vertexCount * 2);
-      pass.draw(this.vertexCount, 1, 0, 0);
-    }
+    this.encodeRenderPass(pass, frame);
     pass.end();
-
     this.device.queue.submit([encoder.finish()]);
-
-    void frame.timeMs;
   }
 
   release(): void {
     this.clearChunkedGeometry();
+    this.quadVertexBuffer.destroy();
     this.positionBuffer?.destroy();
     this.styleIdBuffer?.destroy();
     this.featureIdBuffer?.destroy();

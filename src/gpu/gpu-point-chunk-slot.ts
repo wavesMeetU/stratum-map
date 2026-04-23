@@ -1,5 +1,4 @@
 import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
-import { alignTo4Bytes } from "./byte-align.js";
 import type { GpuBufferPool } from "./gpu-buffer-pool.js";
 
 const VERTEX_USAGE = GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST;
@@ -17,14 +16,14 @@ export class GpuPointChunkSlot {
 
   static byteSizesForVertexCount(vertexCount: number): {
     positionBytes: number;
-    styleWriteBytes: number;
+    styleGpuBytes: number;
     featureIdBytes: number;
   } {
     const positionBytes = vertexCount * 8;
-    const styleBytesRaw = vertexCount * 2;
-    const styleWriteBytes = alignTo4Bytes(styleBytesRaw);
+    /** Instance vertex step uses stride 4; uint16 + 2-byte pad per point. */
+    const styleGpuBytes = vertexCount * 4;
     const featureIdBytes = vertexCount * 4;
-    return { positionBytes, styleWriteBytes, featureIdBytes };
+    return { positionBytes, styleGpuBytes, featureIdBytes };
   }
 
   constructor(device: GPUDevice, msg: GeoJsonWorkerChunkMessage, pool?: GpuBufferPool) {
@@ -34,14 +33,14 @@ export class GpuPointChunkSlot {
     }
     this.vertexCount = vertexCount;
 
-    const { positionBytes, styleWriteBytes, featureIdBytes } =
+    const { positionBytes, styleGpuBytes, featureIdBytes } =
       GpuPointChunkSlot.byteSizesForVertexCount(vertexCount);
 
     if (msg.positions.byteLength < positionBytes) {
       throw new Error("positions ArrayBuffer smaller than vertexCount * 8");
     }
-    if (msg.styleIds.byteLength < styleWriteBytes) {
-      throw new Error("styleIds ArrayBuffer smaller than padded style upload");
+    if (msg.styleIds.byteLength < vertexCount * 2) {
+      throw new Error("styleIds ArrayBuffer smaller than vertexCount * 2");
     }
     if (msg.featureIds.byteLength < featureIdBytes) {
       throw new Error("featureIds ArrayBuffer smaller than vertexCount * 4");
@@ -56,15 +55,17 @@ export class GpuPointChunkSlot {
           });
 
     this.positionBuffer = alloc(positionBytes);
-    this.styleIdBuffer = alloc(styleWriteBytes);
+    this.styleIdBuffer = alloc(styleGpuBytes);
     this.featureIdBuffer = alloc(featureIdBytes);
 
     const queue = device.queue;
     if (positionBytes > 0) {
       queue.writeBuffer(this.positionBuffer, 0, msg.positions, 0, positionBytes);
     }
-    if (styleWriteBytes > 0) {
-      queue.writeBuffer(this.styleIdBuffer, 0, msg.styleIds, 0, styleWriteBytes);
+    if (styleGpuBytes > 0) {
+      const tmp = new Uint8Array(styleGpuBytes);
+      tmp.set(new Uint8Array(msg.styleIds, 0, vertexCount * 2), 0);
+      queue.writeBuffer(this.styleIdBuffer, 0, tmp.buffer, 0, styleGpuBytes);
     }
     if (featureIdBytes > 0) {
       queue.writeBuffer(this.featureIdBuffer, 0, msg.featureIds, 0, featureIdBytes);
@@ -107,27 +108,27 @@ export class GpuPointChunkSlot {
   }
 
   /**
-   * Partial upload of per-vertex style ids. `queue.writeBuffer` size must be 4-byte aligned;
-   * a small scratch pad is used only when `vertexCount * 2` is odd.
+   * Partial upload of per-point style ids (one u16 per instance slot, stride 4 bytes on GPU).
    */
   writeStyleIdRange(queue: GPUQueue, firstVertex: number, styleIds: Uint16Array): void {
     const n = styleIds.length;
-    const rawBytes = n * 2;
-    const byteOffset = firstVertex * 2;
-    const paddedBytes = alignTo4Bytes(rawBytes);
-    if (byteOffset + paddedBytes > this.styleIdBuffer.size) {
+    const byteOffset = firstVertex * 4;
+    const byteLength = n * 4;
+    if (byteOffset + byteLength > this.styleIdBuffer.size) {
       throw new Error("writeStyleIdRange exceeds chunk styleId buffer");
     }
     if (firstVertex + n > this.vertexCount) {
       throw new Error("writeStyleIdRange exceeds chunk vertexCount");
     }
-    if (paddedBytes === rawBytes) {
-      queue.writeBuffer(this.styleIdBuffer, byteOffset, styleIds.buffer, styleIds.byteOffset, paddedBytes);
-      return;
+    const tmp = new Uint8Array(byteLength);
+    const src = new Uint16Array(styleIds.buffer, styleIds.byteOffset, n);
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      const v = src[i]!;
+      tmp[o] = v & 0xff;
+      tmp[o + 1] = (v >> 8) & 0xff;
     }
-    const tmp = new Uint8Array(paddedBytes);
-    tmp.set(new Uint8Array(styleIds.buffer, styleIds.byteOffset, rawBytes));
-    queue.writeBuffer(this.styleIdBuffer, byteOffset, tmp.buffer, 0, paddedBytes);
+    queue.writeBuffer(this.styleIdBuffer, byteOffset, tmp.buffer, 0, byteLength);
   }
 
   destroy(pool?: GpuBufferPool): void {
