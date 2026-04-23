@@ -1,6 +1,8 @@
 import type { GeometryBufferView } from "../core/geometry-buffer.js";
 import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
 import { GpuPointChunkSlot } from "../gpu/gpu-point-chunk-slot.js";
+import { decodeFeatureIdFromRgba8Bytes } from "../picking/id-pack.js";
+import { PICK_POINTS_WGSL, PICK_UNIFORM_BYTE_LENGTH } from "../picking/pick-points-wgsl.js";
 import type { RenderFrame } from "./renderer.js";
 import type { PointStyle } from "./point-style.js";
 import { DEFAULT_POINT_STYLE, MAX_POINT_STYLES } from "./point-style.js";
@@ -35,8 +37,19 @@ export class WebGpuPointsRenderer {
 
   private positionBuffer: GPUBuffer | null = null;
   private styleIdBuffer: GPUBuffer | null = null;
+  private featureIdBuffer: GPUBuffer | null = null;
   private capacityVertices = 0;
   private vertexCount = 0;
+
+  private pickPipeline: GPURenderPipeline | null = null;
+  private pickBindGroup: GPUBindGroup | null = null;
+  private pickUniformBuffer: GPUBuffer | null = null;
+  private pickTexture: GPUTexture | null = null;
+  private pickTextureView: GPUTextureView | null = null;
+  private readbackBuffer: GPUBuffer | null = null;
+  private pickTexW = 0;
+  private pickTexH = 0;
+  private pickPointDiameterPx = 8;
 
   private mapToClip = new Float32Array([
     1, 0, 0, 0,
@@ -245,6 +258,147 @@ export class WebGpuPointsRenderer {
     this.mapToClip.set(columnMajor4x4);
   }
 
+  /**
+   * Point diameter used for the offscreen id pass (match visual size for reliable hits).
+   */
+  setPickPointDiameterPx(px: number): void {
+    this.pickPointDiameterPx = Math.max(1, px);
+  }
+
+  /**
+   * Offscreen RGBA8 pick: encodes `featureId + 1` per pixel (exact integer, no float precision loss).
+   * `x`/`y` are **backing-store** pixels (same as `canvas.width` / `canvas.height`).
+   */
+  async pickFeatureIdAtCanvasPixel(x: number, y: number): Promise<number | null> {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (w <= 0 || h <= 0) return null;
+    const ix = Math.floor(x);
+    const iy = Math.floor(y);
+    if (ix < 0 || iy < 0 || ix >= w || iy >= h) return null;
+
+    this.ensurePickResources();
+    this.ensurePickTextureSize(w, h);
+
+    const pu = new ArrayBuffer(PICK_UNIFORM_BYTE_LENGTH);
+    new Float32Array(pu, 0, 16).set(this.mapToClip);
+    new Float32Array(pu, 64, 4).set([this.pickPointDiameterPx, 0, 0, 0]);
+    this.device.queue.writeBuffer(this.pickUniformBuffer!, 0, pu);
+
+    const encoder = this.device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({
+      colorAttachments: [
+        {
+          view: this.pickTextureView!,
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          loadOp: "clear",
+          storeOp: "store",
+        },
+      ],
+    });
+
+    pass.setPipeline(this.pickPipeline!);
+    pass.setBindGroup(0, this.pickBindGroup!);
+    pass.setViewport(ix, iy, 1, 1, 0, 1);
+    pass.setScissorRect(ix, iy, 1, 1);
+
+    if (this.geometryLayout === "chunks") {
+      for (const chunk of this.chunkSlots) {
+        if (chunk.vertexCount <= 0) continue;
+        pass.setVertexBuffer(0, chunk.positionBuffer, 0, chunk.vertexCount * 8);
+        pass.setVertexBuffer(1, chunk.featureIdBuffer, 0, chunk.vertexCount * 4);
+        pass.draw(chunk.vertexCount, 1, 0, 0);
+      }
+    } else if (this.vertexCount > 0 && this.positionBuffer && this.featureIdBuffer) {
+      pass.setVertexBuffer(0, this.positionBuffer, 0, this.vertexCount * 8);
+      pass.setVertexBuffer(1, this.featureIdBuffer, 0, this.vertexCount * 4);
+      pass.draw(this.vertexCount, 1, 0, 0);
+    }
+
+    pass.end();
+
+    encoder.copyTextureToBuffer(
+      { texture: this.pickTexture!, origin: { x: ix, y: iy, z: 0 } },
+      { buffer: this.readbackBuffer!, bytesPerRow: 256, rowsPerImage: 1 },
+      { width: 1, height: 1, depthOrArrayLayers: 1 },
+    );
+
+    this.device.queue.submit([encoder.finish()]);
+    await this.device.queue.onSubmittedWorkDone();
+
+    const readback = this.readbackBuffer!;
+    await readback.mapAsync(GPUMapMode.READ);
+    try {
+      const u8 = new Uint8Array(readback.getMappedRange(0, 4));
+      return decodeFeatureIdFromRgba8Bytes(u8, 0);
+    } finally {
+      readback.unmap();
+    }
+  }
+
+  private ensurePickResources(): void {
+    if (this.pickPipeline) return;
+
+    const module = this.device.createShaderModule({ code: PICK_POINTS_WGSL });
+    this.pickPipeline = this.device.createRenderPipeline({
+      layout: "auto",
+      vertex: {
+        module,
+        entryPoint: "vs_pick",
+        buffers: [
+          {
+            arrayStride: 8,
+            stepMode: "vertex",
+            attributes: [{ shaderLocation: 0, offset: 0, format: "float32x2" }],
+          },
+          {
+            arrayStride: 4,
+            stepMode: "vertex",
+            attributes: [{ shaderLocation: 1, offset: 0, format: "uint32" }],
+          },
+        ],
+      },
+      fragment: {
+        module,
+        entryPoint: "fs_pick",
+        targets: [{ format: "rgba8unorm" }],
+      },
+      primitive: {
+        topology: "point-list",
+      },
+    });
+
+    this.pickUniformBuffer = this.device.createBuffer({
+      size: PICK_UNIFORM_BYTE_LENGTH,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    this.pickBindGroup = this.device.createBindGroup({
+      layout: this.pickPipeline.getBindGroupLayout(0),
+      entries: [{ binding: 0, resource: { buffer: this.pickUniformBuffer } }],
+    });
+
+    this.readbackBuffer = this.device.createBuffer({
+      size: 256,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+  }
+
+  private ensurePickTextureSize(width: number, height: number): void {
+    if (this.pickTexture && this.pickTexW === width && this.pickTexH === height) {
+      return;
+    }
+    this.pickTexture?.destroy();
+    this.pickTexture = this.device.createTexture({
+      size: { width, height, depthOrArrayLayers: 1 },
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    this.pickTextureView = this.pickTexture.createView();
+    this.pickTexW = width;
+    this.pickTexH = height;
+  }
+
   setStyleTable(styles: readonly PointStyle[]): void {
     if (styles.length === 0) {
       throw new Error("At least one style is required");
@@ -309,24 +463,37 @@ export class WebGpuPointsRenderer {
       buffer.styleIds.byteOffset,
       vertexCount * 2,
     );
+    this.device.queue.writeBuffer(
+      this.featureIdBuffer!,
+      0,
+      buffer.featureIds.buffer,
+      buffer.featureIds.byteOffset,
+      vertexCount * 4,
+    );
   }
 
   private ensureVertexCapacity(n: number): void {
-    if (n <= this.capacityVertices && this.positionBuffer && this.styleIdBuffer) {
+    if (n <= this.capacityVertices && this.positionBuffer && this.styleIdBuffer && this.featureIdBuffer) {
       return;
     }
     this.positionBuffer?.destroy();
     this.styleIdBuffer?.destroy();
+    this.featureIdBuffer?.destroy();
 
     const posSize = Math.max(n, 1024) * 8;
-    const idSize = Math.max(n, 1024) * 2;
+    const styleSize = Math.max(n, 1024) * 2;
+    const featSize = Math.max(n, 1024) * 4;
 
     this.positionBuffer = this.device.createBuffer({
       size: posSize,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.styleIdBuffer = this.device.createBuffer({
-      size: idSize,
+      size: styleSize,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    this.featureIdBuffer = this.device.createBuffer({
+      size: featSize,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
     this.capacityVertices = Math.max(n, 1024);
@@ -392,10 +559,23 @@ export class WebGpuPointsRenderer {
     this.clearChunkedGeometry();
     this.positionBuffer?.destroy();
     this.styleIdBuffer?.destroy();
+    this.featureIdBuffer?.destroy();
+    this.pickTexture?.destroy();
+    this.readbackBuffer?.destroy();
+    this.pickUniformBuffer?.destroy();
+    (this.pickPipeline as { destroy?: () => void }).destroy?.();
     this.frameUniformBuffer.destroy();
     this.styleStorageBuffer.destroy();
     (this.pipeline as { destroy?: () => void }).destroy?.();
     this.context.unconfigure();
+    this.pickPipeline = null;
+    this.pickBindGroup = null;
+    this.pickUniformBuffer = null;
+    this.pickTexture = null;
+    this.pickTextureView = null;
+    this.readbackBuffer = null;
+    this.pickTexW = 0;
+    this.pickTexH = 0;
   }
 }
 

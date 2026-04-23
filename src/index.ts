@@ -1,6 +1,8 @@
 export type { FeatureId, StyleId } from "./types/ids.js";
 export type { GeometryKind } from "./types/geometry.js";
 export type { FeatureRecord } from "./core/feature-record.js";
+export type { MapExtent, StoredFeatureRecord } from "./core/feature-store.js";
+export { FeatureStore } from "./core/feature-store.js";
 export type {
   GeometryBuffer,
   GeometryBufferView,
@@ -26,6 +28,10 @@ export { GpuPointChunkSlot } from "./gpu/gpu-point-chunk-slot.js";
 export { IncrementalDrawScheduler } from "./gpu/incremental-draw-scheduler.js";
 export { PointGeometryStreamBridge } from "./gpu/point-geometry-stream.js";
 export type { PointStreamBridgeOptions } from "./gpu/point-geometry-stream.js";
+export { decodeFeatureIdFromRgba8Bytes } from "./picking/id-pack.js";
+export { PICK_POINTS_WGSL, PICK_UNIFORM_BYTE_LENGTH } from "./picking/pick-points-wgsl.js";
+export { PointHitTester } from "./picking/point-hit-test.js";
+export type { GetFeatureAtPixelOptions } from "./picking/point-hit-test.js";
 export type {
   GeoJsonParseChunkPayload,
   GeoJsonParseOptions,
