@@ -22,6 +22,25 @@ export class FeatureStore {
     this.byId.clear();
   }
 
+  remove(id: FeatureId): boolean {
+    return this.byId.delete(id);
+  }
+
+  /**
+   * Deletes any record whose id is not in `keep`. Returns how many rows were removed.
+   * Use after GPU chunk eviction when you track which feature ids lived in each chunk.
+   */
+  retainIds(keep: ReadonlySet<FeatureId>): number {
+    let removed = 0;
+    for (const id of this.byId.keys()) {
+      if (!keep.has(id)) {
+        this.byId.delete(id);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
   /** Replace records by id (last write wins per id). */
   ingestRecords(records: readonly FeatureRecord[]): void {
     for (const r of records) {

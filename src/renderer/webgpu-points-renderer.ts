@@ -1,5 +1,7 @@
 import type { GeometryBufferView } from "../core/geometry-buffer.js";
 import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
+import { alignTo4Bytes } from "../gpu/byte-align.js";
+import { GpuBufferPool } from "../gpu/gpu-buffer-pool.js";
 import { GpuPointChunkSlot } from "../gpu/gpu-point-chunk-slot.js";
 import { decodeFeatureIdFromRgba8Bytes } from "../picking/id-pack.js";
 import { PICK_POINTS_WGSL, PICK_UNIFORM_BYTE_LENGTH } from "../picking/pick-points-wgsl.js";
@@ -16,6 +18,20 @@ export interface WebGpuPointsRendererOptions {
   readonly device?: GPUDevice;
   /** Initial style table (defaults to one blue style). */
   readonly styles?: readonly PointStyle[];
+  /**
+   * Optional pool for vertex buffers (chunked layout + single-buffer growth).
+   * Caller owns the pool; renderer returns buffers here on destroy/evict when set.
+   */
+  readonly gpuBufferPool?: GpuBufferPool;
+}
+
+/** Options for keyed chunk ingest / replace / tombstone (vertexCount 0 removes the key). */
+export interface IngestTransferredWorkerChunkOptions {
+  /**
+   * Stable id for this GPU chunk (tile id, batch id, etc.).
+   * Omit to append an anonymous chunk (not replaceable; still participates in LRU eviction).
+   */
+  readonly chunkKey?: string;
 }
 
 /**
@@ -61,7 +77,13 @@ export class WebGpuPointsRenderer {
 
   private alphaMode: GPUCanvasAlphaMode = "premultiplied";
   private geometryLayout: "single" | "chunks" = "single";
-  private readonly chunkSlots: GpuPointChunkSlot[] = [];
+  private readonly chunkedChunks = new Map<string, GpuPointChunkSlot>();
+  /** Stable draw order (first draw wins for overlaps). */
+  private readonly chunkDrawOrder: string[] = [];
+  /** Front = least recently touched (eviction candidate). */
+  private readonly chunkLruOrder: string[] = [];
+  private nextAnonChunkKey = 0;
+  gpuBufferPool: GpuBufferPool | null = null;
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -139,6 +161,7 @@ export class WebGpuPointsRenderer {
 
     renderer.alphaMode = alphaMode;
     renderer.configureContext(alphaMode);
+    renderer.gpuBufferPool = options.gpuBufferPool ?? null;
     return renderer;
   }
 
@@ -225,26 +248,119 @@ export class WebGpuPointsRenderer {
   /**
    * Upload one transferred chunk straight to new vertex buffers (no CPU merge).
    * Requires `useChunkedGeometryLayout()` first.
+   *
+   * With `chunkKey`, replaces the prior chunk for that key (same GPU slot in draw order).
+   * `vertexCount === 0` removes the chunk for that key when `chunkKey` is set.
    */
-  ingestTransferredWorkerChunk(msg: GeoJsonWorkerChunkMessage): void {
+  ingestTransferredWorkerChunk(
+    msg: GeoJsonWorkerChunkMessage,
+    options?: IngestTransferredWorkerChunkOptions,
+  ): void {
     if (this.geometryLayout !== "chunks") {
       throw new Error("ingestTransferredWorkerChunk requires useChunkedGeometryLayout()");
     }
+    const key = options?.chunkKey ?? `__anon:${this.nextAnonChunkKey++}`;
+    const existing = this.chunkedChunks.get(key);
+    const pool = this.gpuBufferPool ?? undefined;
+
     if (msg.vertexCount === 0) {
+      if (existing !== undefined) {
+        existing.destroy(pool);
+        this.chunkedChunks.delete(key);
+        this.spliceKeyFromOrders(key);
+      }
       return;
     }
-    this.chunkSlots.push(new GpuPointChunkSlot(this.device, msg));
+
+    if (existing !== undefined) {
+      existing.destroy(pool);
+    }
+
+    const slot = new GpuPointChunkSlot(this.device, msg, pool);
+    this.chunkedChunks.set(key, slot);
+    if (existing === undefined) {
+      this.chunkDrawOrder.push(key);
+    }
+    this.touchChunkLru(key);
+  }
+
+  /** Removes one keyed chunk from the GPU. Returns false if the key was unknown. */
+  removeChunkByKey(chunkKey: string): boolean {
+    const slot = this.chunkedChunks.get(chunkKey);
+    if (slot === undefined) {
+      return false;
+    }
+    slot.destroy(this.gpuBufferPool ?? undefined);
+    this.chunkedChunks.delete(chunkKey);
+    this.spliceKeyFromOrders(chunkKey);
+    return true;
+  }
+
+  /**
+   * Evicts the least recently updated chunk (by ingest / replace touch).
+   * Returns the removed key, or undefined if empty.
+   */
+  evictOldestChunk(): string | undefined {
+    while (this.chunkLruOrder.length > 0) {
+      const key = this.chunkLruOrder.shift()!;
+      if (!this.chunkedChunks.has(key)) {
+        continue;
+      }
+      this.removeChunkByKey(key);
+      return key;
+    }
+    return undefined;
+  }
+
+  /** Repeatedly evicts LRU chunks until `count` removals or the set is empty. */
+  evictOldestChunks(count: number): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const k = this.evictOldestChunk();
+      if (k === undefined) {
+        break;
+      }
+      out.push(k);
+    }
+    return out;
+  }
+
+  /** Current draw order keys (new chunks append; replace keeps position). */
+  getChunkKeys(): readonly string[] {
+    return [...this.chunkDrawOrder];
   }
 
   clearChunkedGeometry(): void {
-    for (const c of this.chunkSlots) {
-      c.destroy();
+    const pool = this.gpuBufferPool ?? undefined;
+    for (const c of this.chunkedChunks.values()) {
+      c.destroy(pool);
     }
-    this.chunkSlots.length = 0;
+    this.chunkedChunks.clear();
+    this.chunkDrawOrder.length = 0;
+    this.chunkLruOrder.length = 0;
   }
 
   getChunkCount(): number {
-    return this.chunkSlots.length;
+    return this.chunkedChunks.size;
+  }
+
+  private touchChunkLru(key: string): void {
+    const i = this.chunkLruOrder.indexOf(key);
+    if (i >= 0) {
+      this.chunkLruOrder.splice(i, 1);
+    }
+    this.chunkLruOrder.push(key);
+  }
+
+  private spliceKeyFromOrders(key: string): void {
+    const di = this.chunkDrawOrder.indexOf(key);
+    if (di >= 0) {
+      this.chunkDrawOrder.splice(di, 1);
+    }
+    const li = this.chunkLruOrder.indexOf(key);
+    if (li >= 0) {
+      this.chunkLruOrder.splice(li, 1);
+    }
   }
 
   /**
@@ -303,8 +419,11 @@ export class WebGpuPointsRenderer {
     pass.setScissorRect(ix, iy, 1, 1);
 
     if (this.geometryLayout === "chunks") {
-      for (const chunk of this.chunkSlots) {
-        if (chunk.vertexCount <= 0) continue;
+      for (const key of this.chunkDrawOrder) {
+        const chunk = this.chunkedChunks.get(key);
+        if (chunk === undefined || chunk.vertexCount <= 0) {
+          continue;
+        }
         pass.setVertexBuffer(0, chunk.positionBuffer, 0, chunk.vertexCount * 8);
         pass.setVertexBuffer(1, chunk.featureIdBuffer, 0, chunk.vertexCount * 4);
         pass.draw(chunk.vertexCount, 1, 0, 0);
@@ -456,13 +575,27 @@ export class WebGpuPointsRenderer {
       buffer.positions.byteOffset,
       vertexCount * 8,
     );
-    this.device.queue.writeBuffer(
-      this.styleIdBuffer!,
-      0,
-      buffer.styleIds.buffer,
-      buffer.styleIds.byteOffset,
-      vertexCount * 2,
-    );
+    const styleRawBytes = vertexCount * 2;
+    const styleWriteBytes = alignTo4Bytes(styleRawBytes);
+    if (buffer.styleIds.byteOffset + styleRawBytes > buffer.styleIds.buffer.byteLength) {
+      throw new Error("styleIds shorter than vertexCount (including padding)");
+    }
+    if (buffer.styleIds.byteOffset + styleWriteBytes <= buffer.styleIds.buffer.byteLength) {
+      this.device.queue.writeBuffer(
+        this.styleIdBuffer!,
+        0,
+        buffer.styleIds.buffer,
+        buffer.styleIds.byteOffset,
+        styleWriteBytes,
+      );
+    } else {
+      const tmp = new Uint8Array(styleWriteBytes);
+      tmp.set(
+        new Uint8Array(buffer.styleIds.buffer, buffer.styleIds.byteOffset, styleRawBytes),
+        0,
+      );
+      this.device.queue.writeBuffer(this.styleIdBuffer!, 0, tmp.buffer, 0, styleWriteBytes);
+    }
     this.device.queue.writeBuffer(
       this.featureIdBuffer!,
       0,
@@ -476,27 +609,43 @@ export class WebGpuPointsRenderer {
     if (n <= this.capacityVertices && this.positionBuffer && this.styleIdBuffer && this.featureIdBuffer) {
       return;
     }
-    this.positionBuffer?.destroy();
-    this.styleIdBuffer?.destroy();
-    this.featureIdBuffer?.destroy();
+    const newCap = Math.max(
+      n,
+      this.capacityVertices > 0 ? Math.ceil(this.capacityVertices * 1.5) : 0,
+      1024,
+    );
+    const posBytes = newCap * 8;
+    const styleBytes = alignTo4Bytes(newCap * 2);
+    const featBytes = newCap * 4;
 
-    const posSize = Math.max(n, 1024) * 8;
-    const styleSize = Math.max(n, 1024) * 2;
-    const featSize = Math.max(n, 1024) * 4;
+    const pool = this.gpuBufferPool;
+    const dispose = (b: GPUBuffer | null | undefined) => {
+      if (b === null || b === undefined) {
+        return;
+      }
+      if (pool !== null) {
+        pool.release(b);
+      } else {
+        b.destroy();
+      }
+    };
 
-    this.positionBuffer = this.device.createBuffer({
-      size: posSize,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    this.styleIdBuffer = this.device.createBuffer({
-      size: styleSize,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    this.featureIdBuffer = this.device.createBuffer({
-      size: featSize,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
-    });
-    this.capacityVertices = Math.max(n, 1024);
+    dispose(this.positionBuffer);
+    dispose(this.styleIdBuffer);
+    dispose(this.featureIdBuffer);
+
+    const alloc = (minBytes: number): GPUBuffer =>
+      pool !== null
+        ? pool.acquire(minBytes)
+        : this.device.createBuffer({
+            size: Math.max(minBytes, 4),
+            usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+          });
+
+    this.positionBuffer = alloc(posBytes);
+    this.styleIdBuffer = alloc(styleBytes);
+    this.featureIdBuffer = alloc(featBytes);
+    this.capacityVertices = newCap;
   }
 
   /** Call when canvas backing store size should change (DPR / resize). */
@@ -537,8 +686,11 @@ export class WebGpuPointsRenderer {
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
     if (this.geometryLayout === "chunks") {
-      for (const chunk of this.chunkSlots) {
-        if (chunk.vertexCount <= 0) continue;
+      for (const key of this.chunkDrawOrder) {
+        const chunk = this.chunkedChunks.get(key);
+        if (chunk === undefined || chunk.vertexCount <= 0) {
+          continue;
+        }
         pass.setVertexBuffer(0, chunk.positionBuffer, 0, chunk.vertexCount * 8);
         pass.setVertexBuffer(1, chunk.styleIdBuffer, 0, chunk.vertexCount * 2);
         pass.draw(chunk.vertexCount, 1, 0, 0);

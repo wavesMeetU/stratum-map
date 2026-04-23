@@ -1,5 +1,8 @@
 import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
-import type { WebGpuPointsRenderer } from "../renderer/webgpu-points-renderer.js";
+import type {
+  IngestTransferredWorkerChunkOptions,
+  WebGpuPointsRenderer,
+} from "../renderer/webgpu-points-renderer.js";
 import { IncrementalDrawScheduler } from "./incremental-draw-scheduler.js";
 
 export interface PointStreamBridgeOptions {
@@ -29,8 +32,11 @@ export class PointGeometryStreamBridge {
   }
 
   /** Partial GPU upload for one transferred worker chunk (no CPU-side merge). */
-  ingestWorkerChunk(msg: GeoJsonWorkerChunkMessage): void {
-    this.renderer.ingestTransferredWorkerChunk(msg);
+  ingestWorkerChunk(
+    msg: GeoJsonWorkerChunkMessage,
+    chunkOptions?: IngestTransferredWorkerChunkOptions,
+  ): void {
+    this.renderer.ingestTransferredWorkerChunk(msg, chunkOptions);
     this.scheduler?.request();
   }
 

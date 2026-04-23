@@ -22,8 +22,19 @@ export {
   WebGpuPointsRenderer,
   createWebGpuPointsRenderer,
 } from "./renderer/webgpu-points-renderer.js";
-export type { WebGpuPointsRendererOptions } from "./renderer/webgpu-points-renderer.js";
+export type {
+  IngestTransferredWorkerChunkOptions,
+  WebGpuPointsRendererOptions,
+} from "./renderer/webgpu-points-renderer.js";
 export { alignTo4Bytes } from "./gpu/byte-align.js";
+export { bucketByteSizeCeil } from "./gpu/buffer-bucket.js";
+export {
+  ChunkedGeometryController,
+  createVertexGpuBufferPool,
+} from "./gpu/chunked-geometry-controller.js";
+export type { ChunkedGeometryControllerOptions } from "./gpu/chunked-geometry-controller.js";
+export { GpuBufferPool } from "./gpu/gpu-buffer-pool.js";
+export { GpuChunkFeatureIndex } from "./gpu/gpu-chunk-feature-index.js";
 export { GpuPointChunkSlot } from "./gpu/gpu-point-chunk-slot.js";
 export { IncrementalDrawScheduler } from "./gpu/incremental-draw-scheduler.js";
 export { PointGeometryStreamBridge } from "./gpu/point-geometry-stream.js";
