@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "stratum-map — WebGPU map rendering for the browser; integrates with OpenLayers map state and canvas conventions.",
+  "license": "Apache-2.0",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -28,11 +29,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:bench": "npm run build && vite build --config vite.bench.config.ts",
     "test:feature-store": "npm run build && node --test tests/feature-store.spec.mjs",
+    "test:text-layout": "npm run build && node --test tests/text-layout.spec.mjs",
+    "test:msdf-text": "npm run build && node --test tests/msdf-text.spec.mjs",
+    "test:label-declutter": "npm run build && node --test tests/label-declutter.spec.mjs",
+    "gen:demo-msdf": "node scripts/gen-demo-msdf-atlas.mjs",
     "test:geojson-pipeline": "npm run build && node --test tests/geojson-pipeline.spec.mjs",
     "test:geojson-worker": "npm run build:bench && playwright test tests/geojson-worker.spec.ts",
     "verify:pan-zoom": "npm run build:bench && playwright test tests/pan-zoom-bench.spec.ts",
     "bench:pan-zoom": "npm run build:bench && vite preview --config vite.bench.config.ts --port 4174 --host 127.0.0.1",
-    "gen:demo-msdf": "node scripts/gen-demo-msdf-atlas.mjs",
     "build:demo": "npm run build && vite build --config vite.demo.config.ts",
     "demo": "npm run build:demo && vite preview --config vite.demo.config.ts --port 4175 --host 127.0.0.1",
     "demo:dev": "vite --config vite.demo.config.ts --port 4175 --host 127.0.0.1"
@@ -55,6 +59,5 @@
     "buffer": "^6.0.3",
     "flatgeobuf": "^4.4.0",
     "wkx": "^0.5.0"
-  },
-  "license": "Apache-2.0"
+  }
 }
