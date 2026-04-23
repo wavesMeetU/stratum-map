@@ -4,3 +4,6 @@ dist-bench/
 playwright-report/
 test-results/
 *.tsbuildinfo
+
+dist-demo/
+.cursor/
