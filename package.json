@@ -1,9 +1,9 @@
 {
-  "name": "wgpu-ol-renderer",
+  "name": "stratum-map",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "GPU-first geospatial rendering pipeline for OpenLayers (foundation layer)",
+  "description": "stratum-map — WebGPU map rendering for the browser; integrates with OpenLayers map state and canvas conventions.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -19,7 +19,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "docs/api",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -53,5 +55,6 @@
     "buffer": "^6.0.3",
     "flatgeobuf": "^4.4.0",
     "wkx": "^0.5.0"
-  }
+  },
+  "license": "Apache-2.0"
 }
