@@ -13,6 +13,19 @@ export type {
   ParserInput,
 } from "./parser/parser.js";
 export type { Renderer, RenderFrame } from "./renderer/renderer.js";
+export { POINTS_WGSL, FRAME_UNIFORM_BYTE_LENGTH } from "./renderer/points-wgsl.js";
+export type { PointStyle } from "./renderer/point-style.js";
+export { DEFAULT_POINT_STYLE, MAX_POINT_STYLES } from "./renderer/point-style.js";
+export {
+  WebGpuPointsRenderer,
+  createWebGpuPointsRenderer,
+} from "./renderer/webgpu-points-renderer.js";
+export type { WebGpuPointsRendererOptions } from "./renderer/webgpu-points-renderer.js";
+export { alignTo4Bytes } from "./gpu/byte-align.js";
+export { GpuPointChunkSlot } from "./gpu/gpu-point-chunk-slot.js";
+export { IncrementalDrawScheduler } from "./gpu/incremental-draw-scheduler.js";
+export { PointGeometryStreamBridge } from "./gpu/point-geometry-stream.js";
+export type { PointStreamBridgeOptions } from "./gpu/point-geometry-stream.js";
 export type {
   GeoJsonParseChunkPayload,
   GeoJsonParseOptions,

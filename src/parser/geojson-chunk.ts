@@ -4,6 +4,10 @@ import type { GeoJsonWorkerChunkMessage } from "./geojson-worker-messages.js";
 
 /**
  * Reconstructs views on the main thread after a zero-copy `postMessage` transfer.
+ * Views alias the transferred `ArrayBuffer`s (no vertex data copy). Prefer passing
+ * `workerChunk` to `WebGpuPointsRenderer.ingestTransferredWorkerChunk` for the GPU path
+ * so the main thread never materializes TypedArrays unless a CPU consumer needs them.
+ *
  * `vertexCount` may be 0 (empty chunk); arrays are still valid zero-length views.
  */
 export function geometryBufferViewFromChunkMessage(msg: GeoJsonWorkerChunkMessage): {

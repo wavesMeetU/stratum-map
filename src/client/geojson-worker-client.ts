@@ -2,6 +2,7 @@ import type { FeatureRecord } from "../core/feature-record.js";
 import type { GeometryBufferView } from "../core/geometry-buffer.js";
 import { geometryBufferViewFromChunkMessage } from "../parser/geojson-chunk.js";
 import type {
+  GeoJsonWorkerChunkMessage,
   GeoJsonWorkerEvent,
   GeoJsonWorkerRequest,
 } from "../parser/geojson-worker-messages.js";
@@ -10,6 +11,8 @@ export interface GeoJsonParseChunkPayload {
   readonly view: GeometryBufferView;
   readonly records: readonly FeatureRecord[];
   readonly chunkIndex: number;
+  /** Same transferred `ArrayBuffer`s as `view` — use for GPU ingest without reshaping. */
+  readonly workerChunk: GeoJsonWorkerChunkMessage;
 }
 
 export interface GeoJsonParseOptions {
@@ -54,7 +57,12 @@ export class GeoJsonWorkerClient {
 
       if (data.type === "chunk") {
         const { view, records } = geometryBufferViewFromChunkMessage(data);
-        route.onChunk({ view, records, chunkIndex: data.chunkIndex });
+        route.onChunk({
+          view,
+          records,
+          chunkIndex: data.chunkIndex,
+          workerChunk: data,
+        });
         return;
       }
 

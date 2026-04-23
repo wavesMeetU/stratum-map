@@ -1,61 +1,10 @@
 import type { GeometryBufferView } from "../core/geometry-buffer.js";
+import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
+import { GpuPointChunkSlot } from "../gpu/gpu-point-chunk-slot.js";
 import type { RenderFrame } from "./renderer.js";
 import type { PointStyle } from "./point-style.js";
 import { DEFAULT_POINT_STYLE, MAX_POINT_STYLES } from "./point-style.js";
-
-const POINTS_WGSL = /* wgsl */ `
-struct FrameUniforms {
-  view_proj: mat4x4<f32>,
-  style_meta: vec4<u32>,
-}
-
-struct GpuStyle {
-  color: vec4<f32>,
-  size_px: f32,
-  _pad: vec3<f32>,
-}
-
-@group(0) @binding(0) var<uniform> frame: FrameUniforms;
-@group(0) @binding(1) var<storage, read> style_table: array<GpuStyle>;
-
-struct VsOut {
-  @builtin(position) clip_pos: vec4<f32>,
-  @builtin(point_size) point_size: f32,
-  @location(0) color: vec4<f32>,
-}
-
-@vertex
-fn vs_main(
-  @location(0) pos: vec2<f32>,
-  @location(1) style_id: u32,
-) -> VsOut {
-  let n_styles = frame.style_meta.x;
-  let sid = select(0u, min(style_id, n_styles - 1u), n_styles > 0u);
-  let st = style_table[sid];
-
-  var o: VsOut;
-  o.clip_pos = frame.view_proj * vec4<f32>(pos.x, pos.y, 0.0, 1.0);
-  o.point_size = max(st.size_px, 1.0);
-  o.color = st.color;
-  return o;
-}
-
-@fragment
-fn fs_main(
-  @builtin(point_coord) coord: vec2<f32>,
-  @location(0) color: vec4<f32>,
-) -> @location(0) vec4<f32> {
-  let d = length(coord - vec2<f32>(0.5, 0.5)) * 2.0;
-  if (d > 1.0) {
-    discard;
-  }
-  let edge = fwidth(d);
-  let a = 1.0 - smoothstep(1.0 - edge * 2.0, 1.0, d);
-  return vec4<f32>(color.rgb, color.a * a);
-}
-`;
-
-const FRAME_UNIFORM_BYTE_LENGTH = 80;
+import { FRAME_UNIFORM_BYTE_LENGTH, POINTS_WGSL } from "./points-wgsl.js";
 
 export interface WebGpuPointsRendererOptions {
   readonly canvas: HTMLCanvasElement;
@@ -96,6 +45,10 @@ export class WebGpuPointsRenderer {
     0, 0, 0, 1,
   ]);
   private styles: PointStyle[] = [];
+
+  private alphaMode: GPUCanvasAlphaMode = "premultiplied";
+  private geometryLayout: "single" | "chunks" = "single";
+  private readonly chunkSlots: GpuPointChunkSlot[] = [];
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -171,6 +124,7 @@ export class WebGpuPointsRenderer {
       options.styles ?? [DEFAULT_POINT_STYLE],
     );
 
+    renderer.alphaMode = alphaMode;
     renderer.configureContext(alphaMode);
     return renderer;
   }
@@ -223,12 +177,61 @@ export class WebGpuPointsRenderer {
   }
 
   private configureContext(alphaMode: GPUCanvasAlphaMode): void {
+    this.alphaMode = alphaMode;
     this.context.configure({
       device: this.device,
       format: this.format,
       alphaMode,
       usage: GPUTextureUsage.RENDER_ATTACHMENT,
     });
+  }
+
+  getDevice(): GPUDevice {
+    return this.device;
+  }
+
+  /**
+   * Draw monolithic geometry from `setGeometry` (default).
+   * Clears any chunked GPU buffers.
+   */
+  useSingleGeometryLayout(): void {
+    this.geometryLayout = "single";
+    this.clearChunkedGeometry();
+  }
+
+  /**
+   * Draw one GPU buffer pair per worker chunk (partial uploads, incremental draws).
+   * `setGeometry` is disabled until `useSingleGeometryLayout()` is called.
+   */
+  useChunkedGeometryLayout(): void {
+    this.geometryLayout = "chunks";
+    this.vertexCount = 0;
+    this.clearChunkedGeometry();
+  }
+
+  /**
+   * Upload one transferred chunk straight to new vertex buffers (no CPU merge).
+   * Requires `useChunkedGeometryLayout()` first.
+   */
+  ingestTransferredWorkerChunk(msg: GeoJsonWorkerChunkMessage): void {
+    if (this.geometryLayout !== "chunks") {
+      throw new Error("ingestTransferredWorkerChunk requires useChunkedGeometryLayout()");
+    }
+    if (msg.vertexCount === 0) {
+      return;
+    }
+    this.chunkSlots.push(new GpuPointChunkSlot(this.device, msg));
+  }
+
+  clearChunkedGeometry(): void {
+    for (const c of this.chunkSlots) {
+      c.destroy();
+    }
+    this.chunkSlots.length = 0;
+  }
+
+  getChunkCount(): number {
+    return this.chunkSlots.length;
   }
 
   /**
@@ -266,6 +269,9 @@ export class WebGpuPointsRenderer {
 
   /** @inheritdoc */
   setGeometry(view: GeometryBufferView): void {
+    if (this.geometryLayout !== "single") {
+      throw new Error("setGeometry is unavailable in chunked layout; use useSingleGeometryLayout()");
+    }
     const { buffer, vertexCount } = view;
     if (vertexCount < 0) {
       throw new Error("vertexCount must be non-negative");
@@ -330,7 +336,7 @@ export class WebGpuPointsRenderer {
   resizeBackingStore(widthPx: number, heightPx: number): void {
     this.canvas.width = Math.max(1, Math.floor(widthPx));
     this.canvas.height = Math.max(1, Math.floor(heightPx));
-    this.configureContext(this.context.configuration?.alphaMode ?? "premultiplied");
+    this.configureContext(this.alphaMode);
   }
 
   /** Convenience: `clientWidth/clientHeight * devicePixelRatio`. */
@@ -363,7 +369,14 @@ export class WebGpuPointsRenderer {
 
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, this.bindGroup);
-    if (this.vertexCount > 0 && this.positionBuffer && this.styleIdBuffer) {
+    if (this.geometryLayout === "chunks") {
+      for (const chunk of this.chunkSlots) {
+        if (chunk.vertexCount <= 0) continue;
+        pass.setVertexBuffer(0, chunk.positionBuffer, 0, chunk.vertexCount * 8);
+        pass.setVertexBuffer(1, chunk.styleIdBuffer, 0, chunk.vertexCount * 2);
+        pass.draw(chunk.vertexCount, 1, 0, 0);
+      }
+    } else if (this.vertexCount > 0 && this.positionBuffer && this.styleIdBuffer) {
       pass.setVertexBuffer(0, this.positionBuffer, 0, this.vertexCount * 8);
       pass.setVertexBuffer(1, this.styleIdBuffer, 0, this.vertexCount * 2);
       pass.draw(this.vertexCount, 1, 0, 0);
@@ -376,11 +389,12 @@ export class WebGpuPointsRenderer {
   }
 
   release(): void {
+    this.clearChunkedGeometry();
     this.positionBuffer?.destroy();
     this.styleIdBuffer?.destroy();
     this.frameUniformBuffer.destroy();
     this.styleStorageBuffer.destroy();
-    this.pipeline.destroy();
+    (this.pipeline as { destroy?: () => void }).destroy?.();
     this.context.unconfigure();
   }
 }

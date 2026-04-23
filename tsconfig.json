@@ -3,6 +3,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "lib": ["ES2022", "DOM"],
+    "types": ["@webgpu/types"],
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",

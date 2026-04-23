@@ -13,6 +13,7 @@ import type {
   GeoJsonWorkerFeatureRecord,
   GeoJsonWorkerRequest,
 } from "../parser/geojson-worker-messages.js";
+import { alignTo4Bytes } from "../gpu/byte-align.js";
 
 const abortedParseIds = new Set<number>();
 const parseQueue: Extract<GeoJsonWorkerRequest, { type: "parse" }>[] = [];
@@ -61,7 +62,8 @@ function buildChunk(
 
   const positions = new Float32Array(vertexTotal * 2);
   const featureIds = new Uint32Array(vertexTotal);
-  const styleIds = new Uint16Array(vertexTotal);
+  const styleU16Count = Math.ceil(alignTo4Bytes(vertexTotal * 2) / 2);
+  const styleIds = new Uint16Array(styleU16Count);
 
   let vertexOffset = 0;
   const records: GeoJsonWorkerFeatureRecord[] = [];
