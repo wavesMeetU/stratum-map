@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>stratum-map — 400k points + pick demo</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@10.8.0/ol.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: #0f1419;
+        color: #e6edf3;
+        min-height: 100vh;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        flex: 0 0 auto;
+        padding: 12px 16px;
+        border-bottom: 1px solid #30363d;
+        background: #161b22;
+      }
+      header h1 {
+        margin: 0 0 4px;
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+      header p {
+        margin: 0;
+        font-size: 0.85rem;
+        color: #8b949e;
+        max-width: 72ch;
+      }
+      #map-wrap {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+      }
+      .ol-viewport canvas {
+        /* OL tiles */
+        outline: none;
+      }
+      #map {
+        position: relative;
+        z-index: 0;
+      }
+      /* Inside OL `.ol-overlaycontainer`: under tiles’ layer group is `.ol-layers`; overlay sits above tiles.
+         DragBox appends after these canvases so the marquee stays visible on top. */
+      #gpu-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+        pointer-events: none;
+        display: block;
+      }
+      #declutter-debug-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #declutter-debug-layer div {
+        box-sizing: border-box;
+      }
+      /* OL `.ol-box` defaults to `--ol-partial-background-color` (opaque-ish); that sits above the GPU canvas and hides points. */
+      #map .ol-box.demo-stratum-dragbox {
+        z-index: 2;
+        background: transparent !important;
+        background-color: transparent !important;
+        border: 2px dashed rgba(126, 231, 135, 0.95) !important;
+        box-shadow: none;
+      }
+      #panel {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        left: auto;
+        z-index: 10;
+        max-width: min(360px, calc(100% - 20px));
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: rgba(22, 27, 34, 0.92);
+        border: 1px solid #30363d;
+        font-size: 13px;
+        line-height: 1.45;
+        pointer-events: auto;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      #panel h2 {
+        margin: 0 0 8px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #8b949e;
+        font-weight: 600;
+      }
+      #panel .stat {
+        color: #58a6ff;
+        font-variant-numeric: tabular-nums;
+      }
+      #panel .warn {
+        color: #d29922;
+      }
+      #panel .err {
+        color: #f85149;
+      }
+      #pick {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #30363d;
+        min-height: 2.5em;
+      }
+      #pick strong {
+        color: #7ee787;
+      }
+      #selection {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #30363d;
+        font-size: 12px;
+        max-height: 11em;
+        overflow-y: auto;
+      }
+      #selection .mono {
+        font-family: ui-monospace, monospace;
+        font-size: 11px;
+        color: #8b949e;
+      }
+      .label-toggle {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #30363d;
+        cursor: pointer;
+        font-size: 12px;
+        line-height: 1.35;
+      }
+      .label-toggle input {
+        margin-top: 2px;
+        flex-shrink: 0;
+      }
+      #label-stats {
+        margin-top: 6px;
+        font-size: 11px;
+        color: #8b949e;
+        font-variant-numeric: tabular-nums;
+      }
+      footer {
+        flex: 0 0 auto;
+        padding: 8px 16px;
+        font-size: 12px;
+        color: #6e7681;
+        border-top: 1px solid #21262d;
+      }
+      footer code {
+        background: #21262d;
+        padding: 1px 6px;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>stratum-map — 400k world points · WebGPU + GPU hit test</h1>
+        <p>
+          Demo: <strong>OpenLayers</strong> map + <strong>stratum-map</strong> WebGPU overlay. Synthetic scatter in WGS84 (Web Mercator). <strong>Click</strong> the map to GPU-pick one point.
+          Hold <strong>Shift</strong> and drag a box: selected points turn <strong>gray</strong> on the GPU layer (CPU
+          scan). Chromium + WebGPU required.
+        </p>
+      </header>
+      <div id="map-wrap">
+        <div id="map" style="width: 100%; height: 100%"></div>
+        <canvas id="gpu-canvas" aria-hidden="true"></canvas>
+        <div id="declutter-debug-layer" aria-hidden="true"></div>
+        <div id="panel">
+          <h2>Status</h2>
+          <div id="status-line">Initializing…</div>
+          <div id="pick"><span class="warn">Click the map to pick one point.</span></div>
+          <label class="label-toggle">
+            <input type="checkbox" id="show-coord-labels" />
+            <span
+              ><strong>Coordinate labels</strong> — drawn on the same WebGPU layer as points (<code>TextLayer</code>); capped per frame. Turn off if a wide zoom stutters.</span
+            >
+          </label>
+          <div id="label-stats"></div>
+          <fieldset
+            id="text-atlas-fieldset"
+            style="margin-top: 10px; padding-top: 10px; border: 0; border-top: 1px solid #30363d; padding-left: 0"
+          >
+            <legend style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #8b949e; font-weight: 600">
+              WebGPU text atlas
+            </legend>
+            <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px; font-size: 12px">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+                <input type="radio" name="text-atlas" id="text-atlas-bitmap" value="bitmap" checked />
+                <span><strong>Bitmap</strong> — DPR-scaled grid (reference)</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer">
+                <input type="radio" name="text-atlas" id="text-atlas-msdf" value="msdf" />
+                <span><strong>MSDF</strong> — prebuilt atlas (sharp when zoomed)</span>
+              </label>
+            </div>
+            <p id="text-atlas-hint" style="margin: 8px 0 0; font-size: 11px; color: #8b949e; line-height: 1.35">
+              Enable coordinate labels, then zoom in: MSDF stays crisp; bitmap softens. MSDF requires
+              <code>public/msdf/atlas.json</code> + <code>atlas.png</code> (see <code>npm run gen:demo-msdf</code>).
+            </p>
+          </fieldset>
+          <fieldset
+            id="declutter-fieldset"
+            style="margin-top: 10px; padding-top: 10px; border: 0; border-top: 1px solid #30363d; padding-left: 0"
+          >
+            <legend style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #8b949e; font-weight: 600">
+              Label declutter
+            </legend>
+            <label style="display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; cursor: pointer; font-size: 12px">
+              <input type="checkbox" id="declutter-enabled" />
+              <span
+                ><strong>Declutter</strong> — screen-space collision; higher <code>priority</code> wins. Pan/zoom to see labels trade places.</span
+              >
+            </label>
+            <label style="display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; cursor: pointer; font-size: 12px">
+              <input type="checkbox" id="declutter-debug-show" />
+              <span><strong>Debug</strong> — green accepted / red rejected boxes (DOM overlay, no Canvas2D).</span>
+            </label>
+          </fieldset>
+          <h2>Box select</h2>
+          <div id="selection">
+            <span class="mono">Shift + drag</span> on the map to select by extent.
+          </div>
+        </div>
+      </div>
+      <footer>
+        <strong>stratum-map</strong> — built to pair with <a href="https://openlayers.org/" style="color: #58a6ff">OpenLayers</a>.
+        <code>npm run demo</code> or <code>npm run demo:dev</code> — <code>examples/demo/main.ts</code>
+      </footer>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

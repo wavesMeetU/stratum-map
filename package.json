@@ -29,7 +29,11 @@
     "test:geojson-pipeline": "npm run build && node --test tests/geojson-pipeline.spec.mjs",
     "test:geojson-worker": "npm run build:bench && playwright test tests/geojson-worker.spec.ts",
     "verify:pan-zoom": "npm run build:bench && playwright test tests/pan-zoom-bench.spec.ts",
-    "bench:pan-zoom": "npm run build:bench && vite preview --config vite.bench.config.ts --port 4174 --host 127.0.0.1"
+    "bench:pan-zoom": "npm run build:bench && vite preview --config vite.bench.config.ts --port 4174 --host 127.0.0.1",
+    "gen:demo-msdf": "node scripts/gen-demo-msdf-atlas.mjs",
+    "build:demo": "npm run build && vite build --config vite.demo.config.ts",
+    "demo": "npm run build:demo && vite preview --config vite.demo.config.ts --port 4175 --host 127.0.0.1",
+    "demo:dev": "vite --config vite.demo.config.ts --port 4175 --host 127.0.0.1"
   },
   "engines": {
     "node": ">=20"
@@ -37,6 +41,9 @@
   "devDependencies": {
     "@playwright/test": "^1.51.0",
     "@webgpu/types": "^0.1.69",
+    "canvas": "^3.2.3",
+    "msdf-bmfont-xml": "^2.8.0",
+    "ol": "^10.8.0",
     "typescript": "~5.7.0",
     "vite": "^6.2.0"
   },
