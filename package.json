@@ -1,0 +1,23 @@
+{
+  "name": "wgpu-ol-renderer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GPU-first geospatial rendering pipeline for OpenLayers (foundation layer)",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.0"
+  }
+}
