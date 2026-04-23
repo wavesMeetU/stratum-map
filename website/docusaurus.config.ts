@@ -70,13 +70,27 @@ const config: Config = {
       },
       items: [
         { type: "docSidebar", sidebarId: "docs", position: "left", label: "Documentation" },
-        { to: "/demo", label: "Live demo", position: "left" },
-        { to: "/examples", label: "Examples", position: "left" },
-        { to: "/examples/picking", label: "Picking demo", position: "left" },
-        { to: "/examples/text", label: "Labels demo", position: "left" },
-        { to: "/docs/benchmarks", label: "Benchmarks", position: "left" },
-        { to: "/docs/architecture", label: "Architecture", position: "left" },
-        { to: "/docs/roadmap", label: "Roadmap", position: "left" },
+        {
+          type: "dropdown",
+          label: "Demos",
+          position: "left",
+          items: [
+            { label: "Live demo", to: "/demo" },
+            { label: "Examples hub", to: "/examples" },
+            { label: "GPU picking", to: "/examples/picking" },
+            { label: "GPU text labels", to: "/examples/text" },
+          ],
+        },
+        {
+          type: "dropdown",
+          label: "Project",
+          position: "left",
+          items: [
+            { label: "Benchmarks", to: "/docs/benchmarks" },
+            { label: "Architecture", to: "/docs/architecture" },
+            { label: "Roadmap", to: "/docs/roadmap" },
+          ],
+        },
         {
           href: `https://github.com/${org}/${project}`,
           label: "GitHub",
