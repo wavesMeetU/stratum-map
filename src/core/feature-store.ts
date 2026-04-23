@@ -13,7 +13,23 @@ function intersects(a: MapExtent, b: MapExtent): boolean {
 }
 
 /**
- * O(1) id → record. Optional bbox for coarse extent queries.
+ * Feature metadata keyed by **feature id** (`Map`).
+ *
+ * **Complexity**
+ * - O(1) average: `getById` / `getRecord`, `ingestRecords` per record, `remove`.
+ * - O(n): `getAll`, `getRecordsInExtent`, `retainIds` (must visit stored ids).
+ *
+ * **Not provided (by design)**
+ * - No dense `0..n-1` store index ↔ featureId map: the stable key is `FeatureId`.
+ * - `vertexStart` / `vertexCount` index into **shared geometry buffers**, not into this store.
+ * - Per-vertex style lives in GPU/style TypedArrays, not in `FeatureRecord`.
+ *
+ * **Ingest semantics**
+ * - `ingestRecords` / `ingestRecordsWithPositions` **upsert** by id (last write wins for duplicates).
+ *
+ * **BBox**
+ * - `ingestRecordsWithPositions` skips bbox when the vertex range is out of range of `positions`
+ *   (silent: leaves bbox unset); callers should validate ranges if they rely on extent queries.
  */
 export class FeatureStore {
   private readonly byId = new Map<FeatureId, StoredFeatureRecord>();

@@ -8,5 +8,11 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     target: "es2022",
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "examples/pan-zoom-bench/index.html"),
+        geojsonWorkerTest: resolve(__dirname, "examples/pan-zoom-bench/geojson-worker-test.html"),
+      },
+    },
   },
 });
