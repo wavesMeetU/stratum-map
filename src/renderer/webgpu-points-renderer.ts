@@ -563,10 +563,10 @@ export class WebGpuPointsRenderer {
     this.pickTexture?.destroy();
     this.readbackBuffer?.destroy();
     this.pickUniformBuffer?.destroy();
-    (this.pickPipeline as { destroy?: () => void }).destroy?.();
+    (this.pickPipeline as unknown as { destroy?: () => void } | null)?.destroy?.();
     this.frameUniformBuffer.destroy();
     this.styleStorageBuffer.destroy();
-    (this.pipeline as { destroy?: () => void }).destroy?.();
+    (this.pipeline as unknown as { destroy?: () => void } | null)?.destroy?.();
     this.context.unconfigure();
     this.pickPipeline = null;
     this.pickBindGroup = null;
