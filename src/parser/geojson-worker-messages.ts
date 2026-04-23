@@ -36,6 +36,8 @@ export interface GeoJsonWorkerChunkMessage {
   readonly featureIds: ArrayBuffer;
   readonly styleIds: ArrayBuffer;
   readonly records: readonly GeoJsonWorkerFeatureRecord[];
+  /** Optional tile / viewport key for cache-oriented hosts (FlatGeobuf bbox loads). */
+  readonly tileKey?: string;
 }
 
 export interface GeoJsonWorkerDoneMessage {

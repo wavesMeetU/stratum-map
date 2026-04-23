@@ -1,19 +1,11 @@
 /// <reference lib="webworker" />
 
 import type { GeoJsonFeature, GeoJsonFeatureCollection } from "../parser/geojson-types.js";
-import {
-  countVertices,
-  geometryKindFor,
-  writeFlattenedGeometry,
-} from "../parser/geojson-flatten.js";
-import type { GeometryKind } from "../types/geometry.js";
+import { buildGeoJsonFeatureChunk } from "../parser/geojson-chunk-build.js";
 import type {
-  GeoJsonWorkerChunkMessage,
   GeoJsonWorkerEvent,
-  GeoJsonWorkerFeatureRecord,
   GeoJsonWorkerRequest,
 } from "../parser/geojson-worker-messages.js";
-import { alignTo4Bytes } from "../gpu/byte-align.js";
 
 const abortedParseIds = new Set<number>();
 const parseQueue: Extract<GeoJsonWorkerRequest, { type: "parse" }>[] = [];
@@ -40,71 +32,6 @@ function normalizeFeatures(parsed: unknown): GeoJsonFeature[] {
     return [parsed as GeoJsonFeature];
   }
   throw new Error("Expected FeatureCollection or Feature");
-}
-
-function geometryKindForFeature(geometry: GeoJsonFeature["geometry"]): GeometryKind {
-  if (geometry === null) return "point";
-  return geometryKindFor(geometry);
-}
-
-function buildChunk(
-  slice: readonly GeoJsonFeature[],
-  globalStartIndex: number,
-  baseFeatureId: number,
-  defaultStyleId: number,
-  chunkIndex: number,
-  parseId: number,
-): GeoJsonWorkerChunkMessage {
-  let vertexTotal = 0;
-  for (const f of slice) {
-    vertexTotal += countVertices(f.geometry);
-  }
-
-  const positions = new Float32Array(vertexTotal * 2);
-  const featureIds = new Uint32Array(vertexTotal);
-  const styleU16Count = Math.ceil(alignTo4Bytes(vertexTotal * 2) / 2);
-  const styleIds = new Uint16Array(styleU16Count);
-
-  let vertexOffset = 0;
-  const records: GeoJsonWorkerFeatureRecord[] = [];
-
-  for (let i = 0; i < slice.length; i++) {
-    const f = slice[i];
-    const featureId = baseFeatureId + globalStartIndex + i;
-    const start = vertexOffset;
-    const written = writeFlattenedGeometry(
-      f.geometry,
-      positions,
-      featureIds,
-      styleIds,
-      featureId,
-      defaultStyleId,
-      vertexOffset,
-    );
-    vertexOffset += written;
-    records.push({
-      id: featureId,
-      geometryKind: geometryKindForFeature(f.geometry),
-      vertexStart: start,
-      vertexCount: written,
-      properties: Object.freeze({ ...(f.properties ?? {}) }) as Record<string, unknown>,
-    });
-  }
-
-  if (vertexOffset !== vertexTotal) {
-    throw new Error(`Internal vertex layout mismatch: ${vertexOffset} vs ${vertexTotal}`);
-  }
-
-  return {
-    type: "chunk",
-    parseId,
-    chunkIndex,
-    vertexCount: vertexTotal,
-    positions: positions.buffer,
-    featureIds: featureIds.buffer,
-    styleIds: styleIds.buffer,
-    records,
-  };
 }
 
 async function runParse(msg: Extract<GeoJsonWorkerRequest, { type: "parse" }>): Promise<void> {
@@ -150,7 +77,14 @@ async function runParse(msg: Extract<GeoJsonWorkerRequest, { type: "parse" }>): 
       if (abortedParseIds.has(parseId)) return;
 
       const slice = features.slice(i, i + batchFeatureCount);
-      const chunk = buildChunk(slice, i, baseFeatureId, defaultStyleId, chunkIndex, parseId);
+      const chunk = buildGeoJsonFeatureChunk(
+        slice,
+        i,
+        baseFeatureId,
+        defaultStyleId,
+        chunkIndex,
+        parseId,
+      );
 
       const transfer: Transferable[] = [chunk.positions, chunk.featureIds, chunk.styleIds];
       self.postMessage(chunk, transfer);

@@ -38,6 +38,12 @@ export type {
   GeoJsonParseSummary,
 } from "./client/geojson-worker-client.js";
 export { GeoJsonWorkerClient, createGeoJsonWorkerClient } from "./client/geojson-worker-client.js";
+export {
+  IngestWorkerClient,
+  createIngestWorkerClient,
+} from "./client/ingest-worker-client.js";
+export type { BBox, IngestWorkerRequest } from "./parser/ingest-worker-messages.js";
+export { buildGeoJsonFeatureChunk, geometryKindForFeature } from "./parser/geojson-chunk-build.js";
 export type {
   GeoJsonWorkerChunkMessage,
   GeoJsonWorkerDoneMessage,
