@@ -28,6 +28,7 @@ const sidebars: SidebarsConfig = {
         "api/point-hit-tester",
       ],
     },
+    "third-party-notices",
   ],
 };
 

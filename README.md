@@ -110,6 +110,8 @@ See **[CONTRIBUTING.md](CONTRIBUTING.md)** and **[CODE_OF_CONDUCT.md](CODE_OF_CO
 
 Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE).
 
+Hosted demos bundle **OpenLayers** (BSD-2-Clause). Full notice: [website/docs/third-party-notices.md](website/docs/third-party-notices.md) (also **Documentation → Third-party notices** on the docs site).
+
 ## Development
 
 ```bash

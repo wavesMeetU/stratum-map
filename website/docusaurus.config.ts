@@ -130,6 +130,7 @@ const config: Config = {
               label: "License (Apache-2.0)",
               href: `https://github.com/${org}/${project}/blob/main/LICENSE`,
             },
+            { label: "Third-party notices", to: "/docs/third-party-notices" },
           ],
         },
       ],
