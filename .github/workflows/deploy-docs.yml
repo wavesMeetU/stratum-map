@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "src/**"
       - ".github/workflows/deploy-docs.yml"
 
 permissions:
@@ -26,13 +30,18 @@ jobs:
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+
+      - name: Install root dependencies (library + Vite for flagship bundle)
+        run: npm ci
 
       - name: Install website dependencies
         working-directory: website
         run: npm ci
 
-      - name: Build Docusaurus
+      - name: Build Docusaurus (prebuild runs flagship demo bundle)
         working-directory: website
         run: npm run build
 

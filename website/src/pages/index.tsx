@@ -59,8 +59,11 @@ export default function Home(): ReactNode {
             <Link className="button button--primary button--lg" to="/docs/getting-started">
               Get started
             </Link>
+            <Link className="button button--secondary button--lg" to="/demo">
+              Live demo
+            </Link>
             <Link className="button button--secondary button--lg" to="/examples">
-              View examples
+              Examples hub
             </Link>
             <Link className="button button--outline button--secondary button--lg" href="https://github.com/wavesMeetU/stratum-map">
               GitHub

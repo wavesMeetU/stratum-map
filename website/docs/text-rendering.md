@@ -32,6 +32,8 @@ import {
 
 See [Text layer API](./api/text-layer.md) and [Text renderer API](./api/text-renderer.md).
 
+**Runnable:** [GPU text labels demo](/examples/text) (OpenLayers overlay + `TextLayer`).
+
 ## MSDF assets
 
 Ship `atlas.png` + `atlas.json` (versioned schema). Use `tryLoadMsdfAtlasFromUrls` or construct `MsdfGlyphAtlas` from existing GPU textures in advanced integrations.

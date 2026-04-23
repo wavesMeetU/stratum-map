@@ -70,7 +70,10 @@ const config: Config = {
       },
       items: [
         { type: "docSidebar", sidebarId: "docs", position: "left", label: "Documentation" },
+        { to: "/demo", label: "Live demo", position: "left" },
         { to: "/examples", label: "Examples", position: "left" },
+        { to: "/examples/picking", label: "Picking demo", position: "left" },
+        { to: "/examples/text", label: "Labels demo", position: "left" },
         { to: "/docs/benchmarks", label: "Benchmarks", position: "left" },
         { to: "/docs/architecture", label: "Architecture", position: "left" },
         { to: "/docs/roadmap", label: "Roadmap", position: "left" },

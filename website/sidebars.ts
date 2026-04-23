@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
     "text-rendering",
     "label-decluttering",
     "gpu-picking",
+    "gpu-text-labels",
     "architecture",
     "benchmarks",
     "roadmap",

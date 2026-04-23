@@ -2,6 +2,7 @@
   "name": "stratum-map-website",
   "private": true,
   "scripts": {
+    "prebuild": "cd .. && npm run website:build:demos",
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
     "build": "docusaurus build",
@@ -22,7 +23,9 @@
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.7.0",
     "@types/node": "^22.0.0",
-    "typescript": "~5.7.0"
+    "ol": "^10.8.0",
+    "typescript": "~5.7.0",
+    "vite": "^6.2.0"
   },
   "browserslist": {
     "production": [">0.5%", "not dead", "not op_mini all"],

@@ -52,7 +52,10 @@
     "website:start": "npm run start --prefix website",
     "website:build": "npm run build --prefix website",
     "website:serve": "npm run serve --prefix website",
-    "website:deploy": "npm run deploy --prefix website"
+    "website:deploy": "npm run deploy --prefix website",
+    "website:build:flagship": "npm run build && npx vite build --config website/vite.flagship.config.ts",
+    "website:build:demos": "npm run build && npx vite build --config website/vite.flagship.config.ts && npx vite build --config website/vite.picking.config.ts && npx vite build --config website/vite.text.config.ts",
+    "website:build:all": "npm run website:build:demos && npm run build --prefix website"
   },
   "engines": {
     "node": ">=20"

@@ -6,19 +6,19 @@ import styles from "./examples.module.css";
 
 const examples = [
   {
-    title: "Large point pan / zoom",
-    text: "Synthetic world points with WebGPU draw and frame sync to an OpenLayers map (see repo `examples/demo`).",
-    action: { label: "Demo script", href: "https://github.com/wavesMeetU/stratum-map/blob/main/package.json" },
+    title: "Large point pan / zoom (hosted)",
+    text: "OpenLayers OSM + WebGPU instanced points, FPS meter, 50k–400k points, color and size controls.",
+    action: { label: "Open live demo", to: "/demo" },
   },
   {
     title: "GPU picking",
-    text: "Single-pixel pick pass → feature id → feature store lookup (`PointHitTester` + renderer pick API).",
-    action: { label: "GPU picking doc", to: "/docs/gpu-picking" },
+    text: "Single-pixel pick pass → feature id → `FeatureStore` metadata; selected vertex highlighted on GPU.",
+    action: { label: "Live picking demo", to: "/examples/picking" },
   },
   {
-    title: "Bitmap vs MSDF labels",
-    text: "Default `GlyphAtlas` for CPU rasterized quads; swap `MsdfGlyphAtlas` for crisp scaling at fixed atlas cost.",
-    action: { label: "Text rendering", to: "/docs/text-rendering" },
+    title: "GPU text labels (hosted)",
+    text: "Coordinate strings over in-view points: bitmap vs MSDF atlas, optional declutter and collision debug overlay.",
+    action: { label: "Live labels demo", to: "/examples/text" },
   },
   {
     title: "Decluttering",

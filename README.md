@@ -27,7 +27,7 @@ WebGPU gives explicit buffer and pipeline control, predictable bind layouts, and
 
 Browse the **Docusaurus** site (landing page, guides, API reference, examples gallery) after [enabling GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) with **GitHub Actions**:
 
-**[https://wavesMeetU.github.io/stratum-map/](https://wavesMeetU.github.io/stratum-map/)** (build from the `website/` directory; see `website/README.md`).
+**[https://wavesMeetU.github.io/stratum-map/](https://wavesMeetU.github.io/stratum-map/)** (build from the `website/` directory; see `website/README.md`). **Live demos:** [Points](https://wavesMeetU.github.io/stratum-map/demo) · [GPU picking](https://wavesMeetU.github.io/stratum-map/examples/picking) · [GPU text labels](https://wavesMeetU.github.io/stratum-map/examples/text).
 
 Local preview:
 

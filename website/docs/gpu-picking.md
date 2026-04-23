@@ -24,6 +24,10 @@ renderer.pickFeatureIdAtCanvasPixel(x, y) → featureId → FeatureStore.getById
 
 Picking is **O(1)** per query relative to vertex count (one render + one readback), but has **fixed overhead** — avoid calling it every frame for hover unless throttled. Tune pick diameter / framebuffer size to balance precision vs cost.
 
+## Live demo
+
+**[GPU picking demo](/examples/picking)** — hosted iframe: click the map, inspect `FeatureStore` properties, watch the highlight style.
+
 ## API
 
 - Renderer: `pickFeatureIdAtCanvasPixel`, `resizePickTargetIfNeeded`, etc. — see [Points renderer](./api/points-renderer.md#picking).

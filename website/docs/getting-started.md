@@ -17,6 +17,16 @@ sidebar_position: 1
 npm install stratum-map
 ```
 
+## Live demo (hosted)
+
+On the documentation site:
+
+- **[Live demo](/demo)** — OpenLayers + WebGPU points (50k–400k), FPS, style controls (`/demos/flagship/`).
+- **[GPU picking demo](/examples/picking)** — click to pick, `FeatureStore` metadata, GPU highlight (`/demos/picking/`).
+- **[GPU text labels demo](/examples/text)** — `TextLayer` over points, bitmap vs MSDF, declutter (`/demos/text/`).
+
+These load Vite bundles from `/demos/...` under the GitHub Pages base path.
+
 ## Next steps
 
 1. [Installation](./installation.md) — package entry points and optional worker bundles.
