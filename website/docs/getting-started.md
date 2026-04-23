@@ -21,7 +21,7 @@ npm install stratum-map
 
 On the documentation site:
 
-- **[Live demo](/demo)** — OpenLayers + WebGPU points (50k–400k), FPS, style controls (`/demos/flagship/`).
+- **[Live demo](/demo)** — OpenLayers + WebGPU points (50k–2M), FPS, style controls (`/demos/flagship/`).
 - **[GPU picking demo](/examples/picking)** — click to pick, `FeatureStore` metadata, GPU highlight (`/demos/picking/`).
 - **[GPU text labels demo](/examples/text)** — `TextLayer` over points, bitmap vs MSDF, declutter (`/demos/text/`).
 

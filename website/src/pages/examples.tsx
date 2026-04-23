@@ -7,7 +7,7 @@ import styles from "./examples.module.css";
 const examples = [
   {
     title: "Large point pan / zoom (hosted)",
-    text: "OpenLayers OSM + WebGPU instanced points, FPS meter, 50k–400k points, color and size controls.",
+    text: "OpenLayers OSM + WebGPU instanced points, FPS meter, 50k–2M points, color and size controls.",
     action: { label: "Open live demo", to: "/demo" },
   },
   {
