@@ -58,3 +58,16 @@ export {
   geometryKindFor,
   writeFlattenedGeometry,
 } from "./parser/geojson-flatten.js";
+export {
+  flattenGeoArrowGeometryData,
+  flattenGeoArrowGeometryVector,
+  isGeoArrowGeometryData,
+  countVerticesGeoArrowChunk,
+  countVerticesGeoArrowRow,
+  geometryKindForGeoArrowData,
+} from "./geoarrow/geoarrow-adapter.js";
+export type {
+  FlattenGeoArrowChunkOptions,
+  FlattenGeoArrowChunkResult,
+  FlattenGeoArrowVectorOptions,
+} from "./geoarrow/geoarrow-adapter.js";
