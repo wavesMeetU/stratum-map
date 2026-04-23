@@ -33,7 +33,3 @@ These load Vite bundles from `/demos/...` under the GitHub Pages base path.
 2. [Quick start](./quick-start.md) — create a renderer and submit a frame.
 3. [OpenLayers integration](./openlayers-integration.md) — overlay canvas and `FrameState` wiring.
 4. [API reference](./api/points-renderer.md) — `WebGpuPointsRenderer`, `TextLayer`, `FeatureStore`, picking.
-
-## Repository layout
-
-The Git repository is often checked out as **`wgpu-ol-renderer`**; the published npm name is **`stratum-map`**. This site uses the public package name throughout.

@@ -90,7 +90,7 @@ Numbers are machine-dependent; run on your target hardware before drawing conclu
 
 ## Roadmap
 
-Non-exhaustive direction (see also **`docs/internal/execution-phases.md`**):
+Non-exhaustive direction:
 
 - Broader format coverage and streaming ergonomics.
 - More examples and hosted API docs.

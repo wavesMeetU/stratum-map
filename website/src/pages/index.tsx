@@ -69,9 +69,6 @@ export default function Home(): ReactNode {
               GitHub
             </Link>
           </div>
-          <p className="text--muted" style={{ fontSize: "0.85rem" }}>
-            npm package: <code>stratum-map</code> · Repository directory is often cloned as <code>wgpu-ol-renderer</code>.
-          </p>
         </div>
       </header>
 
