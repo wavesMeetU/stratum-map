@@ -1,0 +1,38 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.card {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ifm-background-surface-color);
+}
+
+.placeholder {
+  height: 140px;
+  background: linear-gradient(135deg, var(--ifm-color-emphasis-200), var(--ifm-color-emphasis-100));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ifm-color-emphasis-700);
+  font-size: 0.85rem;
+}
+
+.body {
+  padding: 1rem 1.1rem 1.15rem;
+}
+
+.body h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.35rem;
+}
+
+.body p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-700);
+}

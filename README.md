@@ -23,6 +23,19 @@ WebGPU gives explicit buffer and pipeline control, predictable bind layouts, and
 | Text | MSDF atlas loading, `TextLayer` + `TextRenderer`, label declutter |
 | Quality | Node test suites for core layout paths; Playwright benches for pan/zoom and worker demos |
 
+## Documentation website
+
+Browse the **Docusaurus** site (landing page, guides, API reference, examples gallery) after [enabling GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) with **GitHub Actions**:
+
+**[https://wavesMeetU.github.io/stratum-map/](https://wavesMeetU.github.io/stratum-map/)** (build from the `website/` directory; see `website/README.md`).
+
+Local preview:
+
+```bash
+npm run website:install
+npm run website:start
+```
+
 ## Screenshots
 
 > Placeholder: add `docs/images/demo-points.png` and `docs/images/demo-labels.png` after capturing the official demo.

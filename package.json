@@ -47,7 +47,12 @@
     "bench:pan-zoom": "npm run build:bench && vite preview --config vite.bench.config.ts --port 4174 --host 127.0.0.1",
     "build:demo": "npm run build && vite build --config vite.demo.config.ts",
     "demo": "npm run build:demo && vite preview --config vite.demo.config.ts --port 4175 --host 127.0.0.1",
-    "demo:dev": "vite --config vite.demo.config.ts --port 4175 --host 127.0.0.1"
+    "demo:dev": "vite --config vite.demo.config.ts --port 4175 --host 127.0.0.1",
+    "website:install": "npm install --prefix website",
+    "website:start": "npm run start --prefix website",
+    "website:build": "npm run build --prefix website",
+    "website:serve": "npm run serve --prefix website",
+    "website:deploy": "npm run deploy --prefix website"
   },
   "engines": {
     "node": ">=20"
