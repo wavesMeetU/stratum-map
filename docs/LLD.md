@@ -173,4 +173,4 @@ Extent queries are **CPU** only: `FeatureStore.getRecordsInExtent` using stored 
 2. **New draw modes:** New WGSL + vertex layout; keep `GeometryBuffer.indices` contract in mind for lines/fills.
 3. **Styling:** Extend `PointStyle` and style struct in WGSL (alignment: 16-byte GPU struct rules).
 
-Do not break the **renderer unaware of parser format** rule ([EXECUTION_GUIDELINES.md](../EXECUTION_GUIDELINES.md)).
+Do not break the **renderer unaware of parser format** rule ([execution-guidelines.md](./internal/execution-guidelines.md)).

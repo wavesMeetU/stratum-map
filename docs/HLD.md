@@ -78,7 +78,7 @@ flowchart LR
 | **Rendering** | WebGPU device, pipeline, uniforms, chunked or single buffer draw | `WebGpuPointsRenderer`, `POINTS_WGSL` |
 | **Picking** | Second pipeline, id render target, readback | `PICK_POINTS_WGSL`, `pickFeatureIdAtCanvasPixel`, `PointHitTester` |
 
-Design intent matches [SYSTEM_OVERVIEW.md](../SYSTEM_OVERVIEW.md) and execution rules in [EXECUTION_GUIDELINES.md](../EXECUTION_GUIDELINES.md).
+Design intent matches [system-overview.md](./internal/system-overview.md) and execution rules in [execution-guidelines.md](./internal/execution-guidelines.md).
 
 ---
 
@@ -114,7 +114,7 @@ Canvas pixel (backing store coords) → GPU pick pass → RGBA8 id decode → `F
 | Text / labels in WebGPU | **Not** shipped — demos may use Canvas2D overlay |
 | OL as a hard dependency inside `src/` | **No** — OL is devDependency for examples only |
 
-Roadmap-style phasing is described in [PHASES.md](../PHASES.md) (not all phases imply complete features in tree).
+Roadmap-style phasing is described in [execution-phases.md](./internal/execution-phases.md) (not all phases imply complete features in tree).
 
 ---
 
@@ -133,9 +133,9 @@ Roadmap-style phasing is described in [PHASES.md](../PHASES.md) (not all phases 
 |----------|------|
 | [LLD.md](./LLD.md) | Modules, buffers, shaders, sequences |
 | [USAGE.md](./USAGE.md) | Install, exports, APIs, examples |
-| [SYSTEM_OVERVIEW.md](../SYSTEM_OVERVIEW.md) | Short architecture summary |
-| [EXECUTION_GUIDELINES.md](../EXECUTION_GUIDELINES.md) | Engineering constraints |
-| [PHASES.md](../PHASES.md) | Planned execution order |
+| [internal/system-overview.md](./internal/system-overview.md) | Short architecture summary |
+| [internal/execution-guidelines.md](./internal/execution-guidelines.md) | Engineering constraints |
+| [internal/execution-phases.md](./internal/execution-phases.md) | Planned execution order |
 
 ---
 

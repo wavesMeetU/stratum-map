@@ -1,5 +1,6 @@
 /**
- * Demo: ~400k synthetic world points (WebGPU) + GPU pick → lon/lat + EPSG:3857.
+ * Reference demo: large synthetic point set (see `POINT_COUNT`) with WebGPU draw,
+ * GPU picking, and optional MSDF labels on an OpenLayers map.
  */
 import { createWebGpuPointsRenderer } from "../../src/renderer/webgpu-points-renderer.js";
 import type { WebGpuPointsRenderer } from "../../src/renderer/webgpu-points-renderer.js";
@@ -61,7 +62,7 @@ function frameStateToClipMatrix(fs: FrameState, out: Float32Array): void {
 const D2R = Math.PI / 180;
 const MERC_MAX = 20037508.34;
 
-/** WGS84 lon/lat (deg) → EPSG:3857, inlined for 400k points without per-call OL alloc. */
+/** WGS84 lon/lat (degrees) to Web Mercator (EPSG:3857); inlined to avoid per-vertex OpenLayers projection allocations. */
 function lonLatTo3857(lon: number, lat: number, out: Float32Array, o: number): void {
   const clampedLat = Math.max(-85.05112878, Math.min(85.05112878, lat));
   const x = (lon * MERC_MAX) / 180;
@@ -216,7 +217,7 @@ function syncDeclutterDebugLayer(
   }
 }
 
-/** One GPU pick; 400k points makes multi-pixel loops too slow. */
+/** Single-pixel GPU pick; avoids CPU-side neighbor search over the full vertex count. */
 async function pickPointId(
   renderer: WebGpuPointsRenderer,
   bx: number,
