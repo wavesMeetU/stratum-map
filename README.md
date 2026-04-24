@@ -1,5 +1,7 @@
 # stratum-map
 
+[![npm version](https://img.shields.io/npm/v/stratum-map.svg)](https://www.npmjs.com/package/stratum-map)
+
 **stratum-map** is a TypeScript library for **WebGPU** map rendering in the browser. It targets the same projection and frame conventions as **[OpenLayers](https://openlayers.org/)** so you can drive a WebGPU canvas from an OL `Map` without duplicating map math. The npm package does not require OpenLayers at runtime for core types and workers; OpenLayers appears as a **devDependency** for the official demo.
 
 ## What it does

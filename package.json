@@ -45,6 +45,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "prepublishOnly": "npm run build && npm test",
     "test": "npm run build && node --test tests/feature-store.spec.mjs tests/geojson-pipeline.spec.mjs tests/text-layout.spec.mjs tests/msdf-text.spec.mjs tests/label-declutter.spec.mjs",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
