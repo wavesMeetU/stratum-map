@@ -45,6 +45,10 @@ module.exports = function customSitemapPlugin(_context, options) {
 
       if (sitemapRoutes.length === 0) return;
 
+      const sitemapPath = path.join(outDir, filename);
+      await fs.remove(sitemapPath).catch(() => {});
+
+      const seenLoc = new Set();
       const lines = [];
       lines.push('<?xml version="1.0" encoding="UTF-8"?>');
       lines.push('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">');
@@ -57,6 +61,8 @@ module.exports = function customSitemapPlugin(_context, options) {
             baseUrl: siteConfig.baseUrl,
           }),
         ]);
+        if (seenLoc.has(loc)) continue;
+        seenLoc.add(loc);
         lines.push("  <url>");
         lines.push(`    <loc>${escapeXmlText(loc)}</loc>`);
         lines.push(`    <changefreq>${escapeXmlText(changefreq)}</changefreq>`);
@@ -67,7 +73,19 @@ module.exports = function customSitemapPlugin(_context, options) {
       lines.push("</urlset>");
       lines.push("");
 
-      await fs.outputFile(path.join(outDir, filename), lines.join("\n"), "utf8");
+      const body = lines.join("\n");
+      await fs.outputFile(sitemapPath, body, "utf8");
+
+      const written = await fs.readFile(sitemapPath, "utf8");
+      if ((written.match(/<\?xml/g) || []).length !== 1) {
+        throw new Error("custom-sitemap: expected exactly one XML declaration in sitemap.xml");
+      }
+      if ((written.match(/<urlset\b/g) || []).length !== 1) {
+        throw new Error("custom-sitemap: expected exactly one <urlset> root in sitemap.xml");
+      }
+      if ((written.match(/<\/urlset>/g) || []).length !== 1) {
+        throw new Error("custom-sitemap: expected exactly one </urlset> in sitemap.xml");
+      }
     },
   };
 };
