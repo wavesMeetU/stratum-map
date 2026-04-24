@@ -26,6 +26,17 @@ const config: Config = {
     locales: ["en"],
   },
 
+  plugins: [
+    [
+      "./plugins/customSitemap.cjs",
+      {
+        changefreq: "weekly",
+        priority: 0.5,
+        filename: "sitemap.xml",
+      },
+    ],
+  ],
+
   presets: [
     [
       "classic",
@@ -39,11 +50,8 @@ const config: Config = {
         theme: {
           customCss: "./src/css/custom.css",
         },
-        sitemap: {
-          changefreq: "weekly",
-          priority: 0.5,
-          filename: "sitemap.xml",
-        },
+        // Minimal XML sitemap: ./plugins/customSitemap.cjs (disable preset plugin to avoid double output).
+        sitemap: false,
       } satisfies Preset.Options,
     ],
   ],
