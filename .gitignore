@@ -6,6 +6,8 @@ test-results/
 *.tsbuildinfo
 
 dist-demo/
+mcp/stratum-map-mcp/dist/
 .cursor/**
 !.cursor/rules/
 !.cursor/rules/no-cursor-commit-branding.mdc
+!.cursor/mcp.json

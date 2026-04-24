@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"]
+    },
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git@latest", "--repository", "${workspaceFolder}"]
+    },
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    },
+    "stratum-map-tools": {
+      "command": "npx",
+      "args": ["-y", "tsx", "${workspaceFolder}/mcp/stratum-map-mcp/src/index.ts"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
