@@ -45,6 +45,11 @@ jobs:
         working-directory: website
         run: npm run build
 
+      # GitHub Pages may run Jekyll on uploaded files; empty .nojekyll disables it so
+      # sitemap.xml and other assets are served raw (not wrapped as HTML).
+      - name: Ensure .nojekyll at site root
+        run: touch website/build/.nojekyll
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: website/build
