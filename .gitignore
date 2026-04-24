@@ -6,4 +6,6 @@ test-results/
 *.tsbuildinfo
 
 dist-demo/
-.cursor/
+.cursor/**
+!.cursor/rules/
+!.cursor/rules/no-cursor-commit-branding.mdc

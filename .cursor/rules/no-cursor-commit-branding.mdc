@@ -1,0 +1,20 @@
+---
+description: Disable Cursor commit/PR attribution trailers for this repo; reminds contributors of IDE settings.
+alwaysApply: true
+---
+
+# No Cursor attribution in commits or PRs
+
+## For contributors (IDE)
+
+Turn off Cursor’s automatic trailers so `git commit` does not append **`Made-with: Cursor`**:
+
+1. **Cursor → Settings** (or Command Palette → **Cursor Settings**).
+2. **Agents → Attribution**.
+3. Disable **Commit attribution** and, if you prefer, **PR attribution**.
+4. **Fully restart Cursor**.
+
+## For AI / agents
+
+- Do **not** add `Made-with: Cursor`, `Co-authored-by: Cursor`, or similar Cursor attribution lines to commit messages, PR descriptions, or generated git commands.
+- Use plain `git commit` messages without `--trailer` attribution for Cursor.
