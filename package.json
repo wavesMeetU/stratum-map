@@ -1,13 +1,26 @@
 {
   "name": "stratum-map",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "private": false,
   "type": "module",
   "description": "stratum-map — WebGPU map rendering for the browser; integrates with OpenLayers map state and canvas conventions.",
   "license": "Apache-2.0",
+  "author": "wavesMeetU",
+  "homepage": "https://wavesmeetu.github.io/stratum-map/",
+  "keywords": [
+    "webgpu",
+    "maps",
+    "geospatial",
+    "openlayers",
+    "typescript",
+    "rendering",
+    "points",
+    "geojson",
+    "gpu"
+  ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/wavesMeetU/stratum-map.git"
+    "url": "git+https://github.com/wavesMeetU/stratum-map.git"
   },
   "bugs": {
     "url": "https://github.com/wavesMeetU/stratum-map/issues"

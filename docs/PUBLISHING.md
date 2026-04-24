@@ -20,4 +20,15 @@ Rewriting published `main` **force-pushes** and disrupts forks; only do it befor
 
 ## npm
 
-The package name on npm is **`stratum-map`**. Publishing requires npm org or user access; `private: true` in `package.json` currently blocks accidental publish—flip to `false` only when ready.
+The package name on npm is **`stratum-map`**. The package is **`private: false`** as of **v0.1.0** and can be published by maintainers with registry access and **2FA** enabled on their npm account.
+
+First-time publish (local):
+
+```bash
+npm run build && npm test
+npm publish --dry-run
+npm login
+npm publish
+```
+
+Optional CI: add `NPM_TOKEN` to repository secrets and use a tag-triggered workflow (see `.github/workflows/publish-npm.yml`).

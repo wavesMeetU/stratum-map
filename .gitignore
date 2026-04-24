@@ -4,6 +4,7 @@ dist-bench/
 playwright-report/
 test-results/
 *.tsbuildinfo
+stratum-map-*.tgz
 
 dist-demo/
 mcp/stratum-map-mcp/dist/
