@@ -31,6 +31,6 @@ npm login
 npm publish
 ```
 
-Optional CI: add an npm **automation** or **granular access token** as the `NPM_TOKEN` repository secret, then either push a semver tag (`v*.*.*`) or run **Actions → Publish to npm → Run workflow** manually. The workflow at `.github/workflows/publish-npm.yml` runs `npm ci`, `npm test`, and `npm publish` with `NODE_AUTH_TOKEN`.
+Optional CI: add an npm **automation** or **granular access token** as the `NPM_REGISTRY_TOKEN` repository secret (that name is arbitrary; the value is the same token you would use as `NPM_TOKEN` elsewhere), then either push a semver tag (`v*.*.*`) or run **Actions → Publish to npm → Run workflow** manually. The workflow at `.github/workflows/publish-npm.yml` runs `npm ci`, `npm test`, and `npm publish` with `NODE_AUTH_TOKEN`.
 
-If the tag `v0.1.0` was pushed before `NPM_TOKEN` existed, add the secret and use **Run workflow** (or delete and recreate the tag) so publish runs once.
+If the tag `v0.1.0` was pushed before `NPM_REGISTRY_TOKEN` existed, add the secret and use **Run workflow** (or delete and recreate the tag) so publish runs once.

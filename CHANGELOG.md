@@ -17,7 +17,7 @@ First public release on the [npm registry](https://www.npmjs.com/package/stratum
 - Maintainer documentation consolidated under `docs/internal/`.
 - Root `npm test` script running Node-based unit tests after `npm run build`.
 - Package metadata for discovery: `keywords`, `homepage`, `author`; `package.json` is publishable (`private: false`) at version **0.1.0**.
-- GitHub Actions workflow `.github/workflows/publish-npm.yml` to publish tagged releases using the `NPM_TOKEN` secret (including **workflow_dispatch** for reruns after the secret is added).
+- GitHub Actions workflow `.github/workflows/publish-npm.yml` to publish tagged releases using the `NPM_REGISTRY_TOKEN` secret (including **workflow_dispatch** for reruns after the secret is added).
 - `prepublishOnly` script so `npm publish` always runs `npm run build` and `npm test` first.
 - README **npm version** badge linking to the package page.
 
@@ -25,4 +25,4 @@ First public release on the [npm registry](https://www.npmjs.com/package/stratum
 
 - Documentation index and cross-links updated for the new internal doc paths.
 - Demo `main.ts` file header comments aligned with neutral OSS tone (no behavior change).
-- Maintainer notes in `docs/PUBLISHING.md` updated for npm publish steps, `NPM_TOKEN`, and CI reruns.
+- Maintainer notes in `docs/PUBLISHING.md` updated for npm publish steps, `NPM_REGISTRY_TOKEN`, and CI reruns.
