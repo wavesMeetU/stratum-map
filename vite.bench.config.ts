@@ -12,6 +12,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "examples/pan-zoom-bench/index.html"),
         geojsonWorkerTest: resolve(__dirname, "examples/pan-zoom-bench/geojson-worker-test.html"),
+        visualHarness: resolve(__dirname, "examples/pan-zoom-bench/visual-harness.html"),
       },
     },
   },

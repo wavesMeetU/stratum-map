@@ -1,0 +1,54 @@
+# Runs before merge: Node unit tests + Playwright visual regression (WebGPU).
+name: PR tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - stable
+  push:
+    branches:
+      - main
+      - stable
+
+concurrency:
+  group: pr-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Node unit tests
+        run: npm test
+
+      # Same browser family as local dev (`channel: "chrome"` in playwright.config.ts).
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Install Playwright host deps (headless + WebGPU)
+        run: npx playwright install-deps chrome
+
+      - name: Visual regression (pixel diff)
+        run: npm run test:visual
+
+      - name: Upload Playwright output on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-output
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
