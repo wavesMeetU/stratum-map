@@ -14,5 +14,6 @@ Central map of design and usage docs for **stratum-map**.
 | [internal/README.md](./internal/README.md) | Maintainers | Index of internal docs |
 | [CLEANUP_REPORT.md](./CLEANUP_REPORT.md) | Maintainers | Open-source audit notes and resolutions |
 | [PUBLISHING.md](./PUBLISHING.md) | Maintainers | Tags, npm, optional history cleanup |
+| [QA_TEST_STRATEGY.md](./QA_TEST_STRATEGY.md) | QA, maintainers | Test pillars, gaps, suggested cases, risks, testability hooks, CI notes |
 
-**Examples:** `examples/demo/`, `examples/pan-zoom-bench/` — run via `package.json` scripts (`demo`, `demo:dev`, `bench:pan-zoom`, etc.).
+**Examples:** `examples/demo/`, `examples/pan-zoom-bench/` (includes `visual-harness.html` for Playwright screenshots) — run via `package.json` scripts (`demo`, `demo:dev`, `bench:pan-zoom`, `test:visual`, etc.).
