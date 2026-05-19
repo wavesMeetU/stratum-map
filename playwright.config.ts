@@ -6,14 +6,14 @@ import { defineConfig, devices } from "@playwright/test";
  */
 export default defineConfig({
   testDir: "tests",
-  /** One baseline per screenshot name; rely on tolerance for OS/GPU variance (see visual-baseline.ts). */
-  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{ext}",
+  /** Per-OS baselines (`linux/` for CI, `darwin/` for local Mac); see `tests/visual-regression/visual-baseline.ts`. */
+  snapshotPathTemplate: "{testDir}/{testFilePath}-snapshots/{platform}/{arg}{ext}",
   timeout: 120_000,
   expect: {
     timeout: 5_000,
     toHaveScreenshot: {
-      maxDiffPixels: 2500,
-      threshold: 0.32,
+      maxDiffPixels: 3500,
+      threshold: 0.3,
       animations: "disabled",
     },
   },

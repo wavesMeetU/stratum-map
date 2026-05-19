@@ -1,0 +1,35 @@
+# Regenerate linux/ Playwright screenshots on ubuntu-latest (matches PR tests).
+# Actions → this workflow → Run workflow → download artifact → unzip into repo → commit.
+name: Update visual snapshots (linux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Install Playwright host deps
+        run: npx playwright install-deps chrome
+
+      - name: Regenerate snapshots (linux/)
+        run: npm run test:visual:update
+
+      - name: Upload linux snapshot PNGs
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-snapshots-linux
+          path: tests/visual-regression/render-correctness.spec.ts-snapshots/linux/

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standalone WebGPU Rendering Example</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(0, 0, 0, 0.8);
+      padding: 12px 16px;
+      border-radius: 8px;
+      color: white;
+      font-size: 14px;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <div><strong>Mode:</strong> <span id="mode-display">Standalone</span></div>
+    <div><strong>Zoom:</strong> <span id="zoom-display">10</span></div>
+    <div><strong>Center:</strong> <span id="center-display">[0, 0]</span></div>
+    <div><strong>Frame:</strong> <span id="frame-display">0</span></div>
+    <div><strong>FPS:</strong> <span id="fps-display">--</span></div>
+    <div style="margin-top: 8px; font-size: 12px; opacity: 0.8;">
+      Drag: Pan wheel: Zoom r+shift: Zoom in/out<br>
+      Double-click: Zoom to cursor
+    </div>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="map-canvas"></canvas>
+  </div>
+
+  <script type="module">
+    import { WebGpuPointsRenderer } from '../../dist/renderer/webgpu-points-renderer.js';
+    import { MapController } from '../../dist/map-controller.js';
+    import { ViewState } from '../../dist/core/view-state.js';
+
+    // Check WebGPU support
+    async function checkWebGPU(): Promise<boolean> {
+      if (!navigator.gpu) {
+        alert('WebGPU is not supported in this browser');
+        return false;
+      }
+      return true;
+    }
+
+    // Generate random points
+    function generateRandomPoints(count: number, centerX: number, centerY: number, radius: number): Float32Array {
+      const positions = new Float32Array(count * 2);
+      const featureIds = new Uint32Array(count);
+      const styleIds = new Uint16Array(count);
+
+      for (let i = 0; i < count; i++) {
+        // Random position within radius
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * radius;
+        const x = centerX + Math.cos(angle) * distance;
+        const y = centerY + Math.sin(angle) * distance;
+
+        positions[i * 2] = x;
+        positions[i * 2 + 1] = y;
+
+        featureIds[i] = i;
+        styleIds[i] = Math.floor(Math.random() * 3);
+      }
+
+      return positions;
+    }
+
+    // FPS counter
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let fps = '--';
+
+    function updateFPS() {
+      const now = performance.now();
+      frameCount++;
+
+      if (now - lastFrameTime >= 1000) {
+        fps = Math.round(frameCount * 1000 / (now - lastFrameTime));
+        lastFrameTime = now;
+        frameCount = 0;
+        document.getElementById('fps-display')!.textContent = fps;
+      }
+    }
+
+    // Initialize
+    async function init() {
+      const webGPUSupported = await checkWebGPU();
+      if (!webGPUSupported) return;
+
+      const canvas = document.getElementById('map-canvas') as HTMLCanvasElement;
+      const container = document.getElementById('canvas-container')!;
+
+      // Resize canvas to fill container
+      const resizeObserver = new ResizeObserver(() => {
+        const { width, height } = container.getBoundingClientRect();
+        canvas.width = width;
+        canvas.height = height;
+
+        // Update viewport in ViewState
+        const newViewState = controller.getViewState().resize(width, height);
+        controller.updateViewState(newViewState);
+
+        renderer.resizeToDisplaySize();
+      });
+      resizeObserver.observe(container);
+
+      // Create renderer
+      const renderer = await WebGpuPointsRenderer.create({ canvas });
+
+      // Generate initial data
+      const POINT_COUNT = 50000;
+      const RADIUS = 1000000;
+      const positions = generateRandomPoints(POINT_COUNT, 0, 0, RADIUS);
+
+      // Set geometry
+      renderer.setGeometry({
+        positions,
+        styleIds: new Uint16Array(positions.buffer, 16, POINT_COUNT * 2),
+        featureIds: new Uint32Array(positions.buffer, 32, POINT_COUNT)
+      });
+
+      // Create controller in standalone mode
+      window.controller = new MapController({
+        renderer,
+        mode: 'standalone',
+        onBeforeRender: (frameIndex, timestamp) => {
+          document.getElementById('frame-display')!.textContent = frameIndex.toString();
+        },
+        onAfterRender: (frameIndex, timestamp) => {
+          updateFPS();
+        }
+      });
+
+      // Update UI
+      document.getElementById('mode-display')!.textContent = 'Standalone';
+      updateUI();
+
+      // Start render loop
+      window.controller.startRenderLoop();
+    }
+
+    function updateUI() {
+      const viewState = controller.getViewState();
+      document.getElementById('zoom-display')!.textContent = viewState.zoom.toFixed(2);
+      document.getElementById('center-display')!.textContent =
+        `[${viewState.center[0].toFixed(0)}, ${viewState.center[1].toFixed(0)}]`;
+    }
+
+    // Mouse interaction
+    let isDragging = false;
+    let lastMouseX = 0;
+    let lastMouseY = 0;
+
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      isDragging = false;
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      isDragging = false;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+
+      if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
+        // Pan by pixels (accounts for rotation)
+        controller.panByPixels(dx, -dy); // -dy because screen Y is flipped
+        updateUI();
+      }
+
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    });
+
+    // Wheel zoom
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+
+      const delta = e.deltaY > 0 ? 1 : -1;
+      const zoomFactor = delta > 0 ? 0.9 : 1.1;
+
+      controller.zoomToward(zoomFactor);
+      updateUI();
+    });
+
+    // Keyboard zoom
+    document.addEventListener('keydown', (e) => {
+      if (e.shiftKey) {
+        const delta = e.key === '=' ? 1 : -1;
+        const zoomFactor = delta > 0 ? 1.1 : 0.9;
+        controller.zoomToward(zoomFactor);
+        updateUI();
+      }
+    });
+
+    // Double-click zoom to cursor
+    canvas.addEventListener('dblclick', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = rect.top - rect.top; // Canvas Y increases downward
+
+      // Convert screen position to world position
+      const viewState = controller.getViewState();
+      const width = viewState.viewportSize[0];
+      const height = viewState.viewportSize[1];
+      const resolution = viewState.getResolution();
+
+      // Screen to world conversion (inverse of clip matrix)
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const dx = x - centerX;
+      const dy = y - centerY;
+
+      // Account for screen Y flip in ViewState transformations
+      // The ViewState uses counter-rotation for world coordinates
+      // We need to reverse the dy to account for this
+      const worldX = dx * resolution;
+      const worldY = -dy * resolution;
+
+      controller.zoomToward(2.0, worldX, worldY);
+      updateUI();
+    });
+
+    // Start
+    init().catch((err) => {
+      console.error('Initialization failed:', err);
+    });
+  </script>
+</body>
+</html>

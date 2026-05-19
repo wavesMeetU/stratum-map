@@ -40,6 +40,15 @@ jobs:
       - name: Install Playwright host deps (headless + WebGPU)
         run: npx playwright install-deps chrome
 
+      - name: Assert linux visual baselines exist
+        run: |
+          set -e
+          d="tests/visual-regression/render-correctness.spec.ts-snapshots/linux"
+          if ! test -f "$d/points-identity-1600.png"; then
+            echo "::error::Missing $d/*.png — run Actions workflow 'Update visual snapshots (linux)' or npm run test:visual:update:linux:docker, commit the six PNGs, then re-run CI. See $d/README.md"
+            exit 1
+          fi
+
       - name: Visual regression (pixel diff)
         run: npm run test:visual
 

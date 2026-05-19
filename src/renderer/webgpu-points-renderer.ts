@@ -1,4 +1,5 @@
 import type { GeometryBufferView } from "../core/geometry-buffer.js";
+import type { ViewState } from "../core/view-state.js";
 import type { GeoJsonWorkerChunkMessage } from "../parser/geojson-worker-messages.js";
 import { GpuBufferPool } from "../gpu/gpu-buffer-pool.js";
 import { GpuPointChunkSlot } from "../gpu/gpu-point-chunk-slot.js";
@@ -69,6 +70,20 @@ export class WebGpuPointsRenderer {
   private pickTexH = 0;
   private pickPointDiameterPx = 8;
 
+  /**
+   * Internal ViewState used as single source of truth for clip matrix generation.
+   * When set, all clip matrices are derived from this ViewState.
+   * When null, legacy setMapToClipMatrix() behavior is used for backwards compatibility.
+   */
+  private currentViewState: ViewState | null = null;
+
+  /**
+   * Legacy direct matrix storage for backwards compatibility.
+   * Used only when currentViewState is null (i.e., when caller uses setMapToClipMatrix()).
+   * All new code paths should use currentViewState instead.
+   *
+   * @deprecated Prefer renderWithViewState() which uses ViewState internally
+   */
   private mapToClip = new Float32Array([
     1, 0, 0, 0,
     0, 1, 0, 0,
@@ -259,10 +274,12 @@ export class WebGpuPointsRenderer {
 
   /**
    * Records point draws into an existing render pass (same load/store as caller).
-   * Call after `setMapToClipMatrix` / `resize`; uploads frame uniforms then draws.
+   * Clip matrix is derived from currentViewState when set, otherwise from legacy mapToClip.
    */
   encodeRenderPass(pass: GPURenderPassEncoder, frame: RenderFrame): void {
-    this.frameF32.set(this.mapToClip);
+    // Use ViewState as single source of truth when available
+    const clipMatrix = this.currentViewState?.getClipMatrix() ?? this.mapToClip;
+    this.frameF32.set(clipMatrix);
     this.frameViewport[0] = Math.max(this.canvas.width, 1);
     this.frameViewport[1] = Math.max(this.canvas.height, 1);
     this.frameU32[0] = this.styles.length;
@@ -434,12 +451,17 @@ export class WebGpuPointsRenderer {
   /**
    * Column-major 4×4: transforms `[mapX, mapY, 0, 1]` into clip space `[-1, 1]`.
    * Build from OpenLayers frame state (same convention as OL WebGL custom layers).
+   *
+   * @deprecated Prefer renderWithViewState() which uses ViewState internally.
+   * This method is maintained for backwards compatibility with existing OpenLayers integrations.
    */
   setMapToClipMatrix(columnMajor4x4: Float32Array): void {
     if (columnMajor4x4.length !== 16) {
       throw new Error("Expected 16 floats (column-major 4x4)");
     }
     this.mapToClip.set(columnMajor4x4);
+    // Clear currentViewState since we're using direct matrix
+    this.currentViewState = null;
   }
 
   /**
@@ -464,8 +486,10 @@ export class WebGpuPointsRenderer {
     this.ensurePickResources();
     this.ensurePickTextureSize(w, h);
 
+    // Use ViewState as single source of truth when available
+    const clipMatrix = this.currentViewState?.getClipMatrix() ?? this.mapToClip;
     const pu = new ArrayBuffer(PICK_UNIFORM_BYTE_LENGTH);
-    new Float32Array(pu, 0, 16).set(this.mapToClip);
+    new Float32Array(pu, 0, 16).set(clipMatrix);
     new Float32Array(pu, 64, 2).set([Math.max(w, 1), Math.max(h, 1)]);
     new Float32Array(pu, 80, 4).set([this.pickPointDiameterPx, 0, 0, 0]);
     this.device.queue.writeBuffer(this.pickUniformBuffer!, 0, pu);
@@ -775,6 +799,24 @@ export class WebGpuPointsRenderer {
     this.encodeRenderPass(pass, frame);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  /**
+   * Render using a standalone ViewState (no OpenLayers dependency)
+   *
+   * This method provides the new standalone rendering path, while the
+   * existing render(frame) method maintains OpenLayers compatibility.
+   *
+   * The ViewState is stored internally and used as the single source of truth
+   * for clip matrix generation in all subsequent encodeRenderPass() calls.
+   * This is the preferred method for new integrations that don't use OpenLayers.
+   *
+   * @param viewState - ViewState containing center, zoom, rotation, viewportSize
+   * @param frame - Render frame with timing information
+   */
+  renderWithViewState(viewState: ViewState, frame: RenderFrame): void {
+    this.currentViewState = viewState;
+    this.render(frame);
   }
 
   release(): void {

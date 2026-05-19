@@ -3,6 +3,24 @@ export type { GeometryKind } from "./types/geometry.js";
 export type { FeatureRecord } from "./core/feature-record.js";
 export type { MapExtent, StoredFeatureRecord } from "./core/feature-store.js";
 export { FeatureStore } from "./core/feature-store.js";
+export { ViewState, panByPixels, zoomToward } from "./core/view-state.js";
+export {
+  OpenLayersFrameStateAdapter,
+  type OpenLayersFrameState,
+} from "./core/openlayers-adapter.js";
+export {
+  MapController,
+  type MapControllerOptions,
+  type RenderMode,
+} from "./map-controller.js";
+export {
+  standaloneBootstrap,
+  bootstrapAuto,
+  hasOpenLayers,
+  type StandaloneBootstrapOptions,
+  type StandaloneBootstrapResult,
+  type BootstrapMode,
+} from "./bootstrap.js";
 export type {
   GeometryBuffer,
   GeometryBufferView,

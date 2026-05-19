@@ -15,10 +15,11 @@ This document captures **test gaps**, **suggested cases**, and **risk areas** fo
 | `npm run verify:pan-zoom` | `build:bench` + Playwright: `tests/pan-zoom-bench.spec.ts` (WebGPU pan/zoom synthetic bench) |
 | `npm run test:visual` | `build:bench` + Playwright: `tests/visual-regression/render-correctness.spec.ts` (pixel diff vs PNG baselines) |
 | `npm run test:visual:update` | Same as `test:visual` with `--update-snapshots` (refresh baselines after intentional rendering changes) |
+| `npm run test:visual:update:linux:docker` | Regenerate **`linux/`** snapshots via Docker (`scripts/regen-visual-snapshots-linux-docker.sh`; needs a running Docker daemon) |
 
 Playwright uses Chrome with `--enable-unsafe-webgpu` (`playwright.config.ts`). **Default `npm test` does not run Playwright.**
 
-**CI note:** `.github/workflows/pr-tests.yml` runs on pull requests (and pushes to `main` / `stable`): `npm test` plus `npm run test:visual` (Google Chrome in headless mode + `--enable-unsafe-webgpu`, same as local `playwright.config.ts`). `prepublishOnly` still runs build + test before npm publish. If **Linux CI** pixels still diverge from baselines captured on macOS, run `npm run test:visual:update` in an **ubuntu** environment (or loosen `tests/visual-regression/visual-baseline.ts`). To block merges on green CI, enable **Require status checks** in GitHub branch protection for the `PR tests / test` job.
+**CI note:** `.github/workflows/pr-tests.yml` runs on pull requests (and pushes to `main` / `stable`): `npm test` plus `npm run test:visual`. **CI compares against `tests/visual-regression/render-correctness.spec.ts-snapshots/linux/`** (same `ubuntu-latest` + Chrome stack as the workflow). Local macOS updates **`darwin/`** only. To (re)build **`linux/`** PNGs: run the **“Update visual snapshots (linux)”** GitHub Action (`workflow_dispatch` on `.github/workflows/update-visual-snapshots.yml`), download artifact **`visual-snapshots-linux`**, and commit the files into `linux/`; or run `npm run test:visual:update:linux:docker` on a machine with Docker. `prepublishOnly` still runs build + test before npm publish. Enable **Require status checks** for **`PR tests / test`** on `main` / `stable` if merges should wait on green CI.
 
 ---
 
@@ -52,7 +53,7 @@ Playwright uses Chrome with `--enable-unsafe-webgpu` (`playwright.config.ts`). *
 
 **Goal:** Catch unintended changes to the WebGPU point pass using `expect(locator).toHaveScreenshot` with tolerance.
 
-**Implementation:** `examples/pan-zoom-bench/visual-harness.html` + `visual-harness.ts` (deterministic points, fixed 512×384 canvas). Baselines live under `tests/visual-regression/render-correctness.spec.ts-snapshots/`. Policy and tolerance constants are in `tests/visual-regression/visual-baseline.ts`. `playwright.config.ts` sets `snapshotPathTemplate` without OS suffix so one baseline can gate Linux CI; `maxDiffPixels` / `threshold` absorb `fwidth()` AA and minor GPU variance.
+**Implementation:** `examples/pan-zoom-bench/visual-harness.html` + `visual-harness.ts` (deterministic Mulberry32 positions + fixed seeds, fixed 512×384 canvas). Baselines are **per OS**: `render-correctness.spec.ts-snapshots/linux/` (authoritative for **GitHub Actions**) and `…/darwin/` (local macOS). Policy: `tests/visual-regression/visual-baseline.ts`. Path template: `playwright.config.ts` → `snapshotPathTemplate` with `{platform}`. After shader or harness changes, refresh the folder that matches where you run `--update-snapshots`, then commit both if both matter.
 
 ---
 
@@ -92,7 +93,7 @@ OpenLayers **clip matrix** helpers today live in **demo entrypoints** (e.g. `exa
 
 8. **Performance matrix is narrow** — Single point count and single p95 budget; no matrix over DPR, chunked vs single, text enabled, or concurrent picks.
 
-9. **No GitHub Actions workflow running tests** — PRs are not gated by `npm test` or Playwright in this repo’s workflows.
+9. **Broader Playwright in CI** — `pr-tests.yml` runs unit + visual regression; other Playwright specs (`geojson-worker`, `pan-zoom-bench`) remain opt-in via `package.json` scripts unless added to CI.
 
 ---
 

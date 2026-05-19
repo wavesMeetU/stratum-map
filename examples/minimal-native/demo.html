@@ -1,0 +1,2034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimal Standalone Demo</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Canvas container -->
+<div id="canvas-container">
+  <canvas id="map-canvas"></canvas>
+</div>
+
+<!-- Info panel -->
+<div id="info-panel">
+  <div style="background: rgba(0, 0,0,0.75); color: white; padding: 12px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0,0.1);">
+
+  <div class="title" style="font-weight: 600; color: white">Minimal Standalone</div>
+
+  <div style="font-size: 12px; color: #eee;">
+  <div id="info-content">
+    <div class="info-item">
+      <strong>Mode:</strong> <span id="mode-display">Standalone</span>
+    <strong>Zoom:</strong> <span id="zoom-display">10</span>
+    <strong>Center:</strong> <span id="center-display">[0, 0]</span>
+  <strong>Rotation:</strong> <span id="rotation-display">0°</span>
+  <strong>Frame:</strong> <span id="frame-display">0</span>
+    <div style="margin-left: 10px;">
+      <span id="fps-display">FPS: --</span>
+    </div>
+
+    <div class="info-item">
+      <strong>Status:</strong> <span id="status-display">Ready</span>
+      <span id="info-value">✅ WebGPU initialized</span>
+    </div>
+  </div>
+</div>
+
+<!-- Instructions -->
+<div id="instructions" style="background: rgba(0,0,0,0.75); padding: 12px; border-radius: 8px; margin-top: 12px;">
+  <div class="title" style="font-size: 14px; color: #eee; margin-bottom: 8px;">
+    Basic Interactions:
+  </div>
+
+  <div id="instructions" style="background: rgba(0,0,0,0.75); padding: 12px; border-radius: 8px; margin-bottom: 8px;">
+    <div class="instruction-group">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="instruction">
+          <div style="flex-shrink: 0; flex-direction: row; align-items: center; gap: 4px;">
+            <div class="instruction-arrow">→</div>
+          </div>
+        <div class="instruction-text">
+          <div class="instruction-title">Pan</div>
+          <div class="instruction-content">
+            <div class="instruction-text">
+              Drag map with mouse
+            </div>
+            <div class="instruction-arrow">→</div>
+            <div class="instruction-text">
+              Zoom with mouse wheel
+            </div>
+            <div class="instruction-arrow">→</div>
+            <div class="instruction-text">
+              Click to center location
+            </div>
+            <div class="instruction-arrow">→</div>
+            <div class="instruction-text">
+              Double-click zoom to cursor
+            </div>
+            <div class="instruction-arrow">→</div>
+          </div>
+        </div>
+        <div class="instruction-arrow">→</div>
+          <div class="instruction-text">
+              Mouse wheel zoom (1.2× = zoom 0.9, 1.1)
+            </div>
+            <div class="instruction-arrow">→</div>
+          <div class="instruction-text">
+              Shift + drag: Pan state updates
+            </div>
+            <div class="instruction-arrow">→</div>
+          <div class="instruction-text">
+              Shift + scroll: Zoom out
+            </div>
+            <div class="instruction-arrow">→</div>
+          <div class="instruction-text">
+              Ctrl + scroll: Pan state updates
+            </div>
+            <div class="instruction-arrow">→</div>
+          <div class="instruction-text">
+              Alt + drag: Pan state updates
+            </div>
+            <div class="instruction-arrow">→</div>
+          <div class="instruction-text">
+              Alt + drag: Zoom state updates
+            </div>
+          <div class="instruction-arrow">→</div>
+        </div>
+      </div>
+
+      <div class="instruction-group">
+        <div class="instruction-group-title" style="font-size: 16px; color: #aaa; margin-top: 8px;">
+          <div class="instruction-group-content">
+            <div class="instruction">
+              Zoom to cursor location
+            </div>
+            <div class="instruction-group-arrow">→</div>
+            <div class="instruction-content">
+              Double-click to zoom in toward cursor
+            </div>
+            <div class="instruction-arrow">→</div>
+            <div class="instruction-content">
+              Zoom to center
+            </div>
+            <div class="instruction-arrow">→</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<div id="canvas-container">
+  <canvas id="map-canvas"></canvas>
+</div>
+
+<script type="module">
+/**
+ * Standalone Demo - Minimal, clean implementation
+ */
+
+// Check WebGPU support
+if (!navigator.gpu) {
+  alert("WebGPU is not supported");
+}
+
+// Get canvas
+const canvas = document.getElementById("map-canvas") as HTMLCanvasElement;
+if (!canvas) {
+  alert("Canvas not found");
+}
+
+// Test WebGPU device
+let device: GPUDevice | null;
+try {
+  device = await navigator.gpu.requestDevice();
+} catch (e) {
+  alert("WebGPU device request failed: " + e.message);
+}
+
+// Create minimal standalone renderer
+const renderer = new WebGpuPointsRenderer({
+  canvas,
+  alphaMode: "premultiplied",
+  device,
+  gpuBufferPool: null
+});
+
+// Create minimal ViewState
+let viewState = new ViewState([0, 0], 10, 0, [800, 600]);
+
+// Basic geometry generator
+function createPointGrid(
+  count: number,
+  centerX: number,
+  centerY: number,
+  gridSize: number
+): { positions: Float32Array; featureIds: Uint32Array } {
+  const POINT_COUNT = count;
+  const positions = new Float32Array(POINT_COUNT * 2);
+  const featureIds = new Uint32Array(POINT_COUNT);
+
+  // Generate point grid centered around center
+  const xStart = centerX - gridSize / 2;
+  const yStart = centerY - gridSize / 2;
+  const cellSize = gridSize / 10;
+
+  for (let i = 0; i < POINT_COUNT; i++) {
+    for (let x = -xStart; x < xStart + cellSize; x += cellSize) {
+      for (let y = -yStart; y < yStart + cellSize; y += cellSize) {
+        const x = -xStart + i * cellSize;
+        const y = -yStart + i * cellSize;
+
+        // Store point
+        positions[i * 2] = x;
+        positions[i * 2 + 1] = y;
+        positions[i * 2 + 2] = 0; // feature ID 0
+
+        // Generate random feature ID
+        featureIds[i] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+
+        // Store feature ID
+        featureIds[i] = i + 1;
+        featureIds[i * 2] = (i % 10000) / MAX_POINT_COUNT;
+
+        // Debug: Assign pattern
+        if (i % 10 === 0) featureIds[i] = 1; // Pattern A
+        else featureIds[i] = 2; // Pattern B (every 10 points)
+        else featureIds[i] = 1; // Random pattern
+
+        // Stagger pattern
+        if (i % 2 === 0) {
+          featureIds[i] = 1; // Pattern A
+        } else if (i % 4 === 0) {
+          featureIds[i] = 2; // Pattern B
+        } else if (i % 8 === 0) {
+          featureIds[i] = 1; // Pattern C
+        } else {
+          featureIds[i] = 1; // Random
+        }
+      }
+    }
+
+    return { positions, featureIds };
+}
+
+// Generate random grid for testing
+function createRandomGrid(
+  count: number,
+  centerX: number,
+  centerY: number,
+  gridSize: number
+): Float32Array {
+  const POINT_COUNT = count;
+  const positions = new Float32Array(POINT_COUNT * 2);
+  const featureIds = new Uint32Array(POINT_COUNT);
+
+  for (let i = 0; i < POINT_COUNT; i++) {
+    // Generate random position
+    const x = (Math.random() - 0.5) * gridSize;
+    const y = (Math.random() - 0.5) * gridSize;
+    const z = (Math.random() - 0.5) * gridSize;
+    const fx = Math.random() - 0.5) * 10000;
+    const fy = Math.random() - 0.5) * 10000;
+
+    positions[i * 2] = x;
+    positions[i * 2] = y;
+    positions[i * 2] = z;
+    positions[i * 2] = fx;
+    positions[i * 2] = fy;
+
+    // Stagger X
+    if (Math.random() < 0.3) {
+      positions[i * 2] = x + fx;
+    } else if (Math.random() > 0.7) {
+      positions[i * 2] = x - fx;
+    }
+
+    // Stagger Y
+    if (Math.random() < 0.3) {
+      positions[i * 2] = y + fy;
+    } else if (Math.random() > 0.7) {
+      positions[i * 2] = y - fy;
+    }
+
+    // Random patterns
+    const pattern = Math.floor(Math.random() * 3); // 0=A, 1=B, 2=C, 3=D
+
+    if (pattern === 0) {
+      // Random pattern
+      positions[i * 2] = Math.random() * 10000;
+      positions[i * 2] = (Math.random() * 10000;
+      featureIds[i] = i + 1;
+      positions[i * 2] = (Math.random() * 10000;
+      featureIds[i] = (i % 10000) / MAX_POINT_COUNT - 1;
+    } else if (pattern === 1) {
+      // B pattern
+      positions[i * 2] = i + 1;
+      featureIds[i * 2] = i % 10000 / MAX_POINT_COUNT - 2;
+    } else {
+      // Random pattern
+      positions[i * 2] = (Math.random() * 10000;
+      featureIds[i] = i + 1;
+      featureIds[i * 2] = (Math.random() * 10000;
+      featureIds[i] = (i % 10000) / MAX_POINT_COUNT - 1;
+    }
+  }
+
+    return { positions, featureIds };
+}
+
+// Initialize with random data
+const POINT_COUNT = 5000;
+
+const pointData = createRandomGrid(POINT_COUNT / 2, 0, 0, 400);
+
+// Set geometry on renderer
+renderer.setGeometry({
+  positions: pointData.positions,
+  featureIds: pointData.featureIds,
+  featureInfo: {
+    vertexLayout: "interleaved 64-bit interleaved XYZ",
+    components: 4, // position: X, Y
+    worldUnits: 777,  // meters per unit circle
+  },
+  spriteSize: 16 // pixels per sprite
+}
+);
+
+// Expose renderer for testing
+function rendererExpose() {
+  return renderer;
+}
+
+// Basic update loop
+let frameIndex = 0;
+let animationId: number | null = null;
+let lastTime = performance.now();
+
+function renderFrame() {
+  const now = performance.now();
+  const delta = now - lastTime;
+  lastTime = now;
+
+  const view = renderer.getViewState();
+  const canvas = document.getElementById("map-canvas") as HTMLCanvasElement;
+  const canvasWidth = canvas.width;
+  const canvasHeight = canvas.height;
+
+  // Calculate FPS
+  const fps = 1000 / (delta / 1000) || 60;
+
+  // Update info panel
+  document.getElementById("mode-display").textContent = "Standalone";
+  document.getElementById("zoom-display").textContent = view.zoom.toFixed(2);
+  document.getElementById("center-display").textContent = `[${view.center[0].toFixed(0)}, ${view.center[1].toFixed(0)}]`;
+  document.getElementById("frame-display").textContent = frameIndex.toString();
+
+  // Check if WebGL rendering
+  const gl = canvas.getContext("webgl2");
+  if (!gl) {
+    throw new Error("WebGL not available");
+  }
+
+  // In standalone mode, we manage our own render loop
+  // This simulates OpenLayers postrender events by calling render() directly
+
+  // Simulate OpenLayers postrender event
+  const now = performance.now();
+  renderFrame(); // Call render with current ViewState
+
+  // Update FPS counter
+  frameIndex++;
+
+  // Trigger next frame
+  if (animationId !== null) {
+    animationId = requestAnimationFrame(renderFrame);
+  } else {
+    animationId = requestAnimationFrame(renderFrame);
+  }
+}
+
+function startAnimationLoop(): void {
+  if (animationId !== null) {
+    renderFrame();
+    animationId = requestAnimationFrame(renderFrame);
+
+    const animate = () => {
+      renderFrame();
+
+      // 60 FPS
+      const id = requestAnimationFrame(animate);
+      requestAnimationFrame(() => {
+        // Get current time
+        const now = performance.now();
+        const dt = now - lastTime;
+        lastTime = now;
+
+        // If frame time is negative, reset it
+        if (dt < 0) {
+          dt = 0;
+          lastTime = now;
+        }
+
+        // End of animation
+        if (dt >= 0) {
+          requestAnimationFrame(id);
+        }
+      });
+
+    return;
+  };
+
+function stopAnimationLoop(): void {
+  if (animationId !== null) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+  }
+
+// Clean up
+stopAnimationLoop();
+
+// Set animation ID
+function setAnimationId(id: number): void {
+  this.animationId = id;
+}
+
+// Just use the basic renderer for now
+function createBasicRenderer(): WebGpuPointsRenderer {
+  const canvas = document.getElementById("map-canvas") as HTMLCanvasElement;
+
+  return WebGpuPointsRenderer.create({
+    canvas,
+    alphaMode: "premultiplied",
+  });
+}
+
+// Set basic point style
+const STYLE_SIZE = 6;
+
+function createPointStyle(): PointStyle {
+  return {
+    size: STYLE_SIZE,
+    color: "#FF0000FF" - RGB color
+  },
+  {
+    strokeWidth: 2, // Screen-space thickness in pixels
+  },
+  {
+    outline: 1, // Screen-space outline in pixels
+  },
+
+    opacity: 1, // Opacity (1 = transparent)
+  },
+  /**
+     * @param color - Hex color string (e.g. "#FF0000FF"FF")
+     */
+    color: string;
+  };
+
+function createStyleTable(): PointStyle[] {
+  const styles: PointStyle[] = [];
+
+  for (let i = 0; i < STYLE_SIZE; i++) {
+    styles.push(createPointStyle({
+      color: `hsl(${Math.random() * 360}°)`), // Random hue
+    });
+
+    return styles;
+}
+
+function createGeometry(count: number): { positions: Float32Array; featureIds: Uint32Array } {
+  const POINT_COUNT = count;
+
+  const positions = new Float32Array(POINT_COUNT * 2);
+  const featureIds = new Uint32Array(POINT_COUNT);
+
+  for (let i = 0; i < POINT_COUNT; i++) {
+    // Generate random position
+    const x = (Math.random() - 0.5) * gridSize / 2;
+    const y = (Math.random() - 0.5) * gridSize / 2;
+    const z = (Math.random() -0.5) * 10000;
+
+    // Store point and feature ID
+    positions[i * 2] = x;
+    positions[i * 2] = y;
+    positions[i * 2] = z;
+    featureIds[i * 2] = i;
+
+    // Generate random feature ID
+    featureIds[i] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+    featureIds[i * 2] = i + 1;
+    featureIds[i * 2] = (i % 10000) / MAX_POINT_COUNT;
+
+    // Debug: Assign sequential feature IDs
+    featureIds[i] = i + 1;
+    featureIds[i * 2] = (i / 10000) / MAX_POINT_COUNT;
+
+    // Stagger pattern
+    if (i % 10 === 0) {
+      featureIds[i * 1] = 1; // Pattern A (every 10 points)
+    } else if (i % 4 === 0) {
+      featureIds[i * 2] = 2; // Pattern B (every 4 points)
+    } else if (i % 8 === 0) {
+      featureIds[i * 2] = 4; // Pattern C (every 8 points)
+    } else {
+      featureIds[i * 2] = 1; // Random pattern
+    }
+  }
+
+    return { positions, featureIds };
+}
+
+// Generate 1000 random points in a grid
+
+function createRandom1000Points(): { positions: Float32Array; featureIds: Uint32Array } {
+  const gridSize = 50;
+  const centerX = 0;
+  const centerY = 0;
+  const COUNT = 10000;
+
+  const positions = new Float32Array(COUNT * 2);
+  const featureIds = new Uint32Array(COUNT * 2);
+
+  for (let i = 0; i < COUNT; i++) {
+    // Generate random grid
+    const xStart = centerX - gridSize / 2;
+    const yStart = centerY - gridSize / 2;
+
+    for (let row = 0; row < 1000; row++) {
+      const yStart = yStart + row * gridSize;
+
+      for (let col = 0; col < 1000; col++) {
+        const x = xStart + col * gridSize;
+        const y = yStart + row * gridSize;
+
+        for (let row in row < rowCount; row++) {
+          // Generate grid
+          for (let i = 0; i < COUNT; i++) {
+            const x = xStart + col * gridSize;
+            const y = yStart + row * gridSize;
+
+            // Generate point at current (row, col)
+            const x = xStart + col;
+            const y = yStart + row;
+
+            // Stagger X
+            if (Math.random() < 0.25) {
+              x += Math.cos(1.1 * 0.1) * 0.05);
+            } else if (Math.random() > 0.25) {
+              x -= Math.cos(1.1) * 0.05);
+            }
+
+            // Stagger Y
+            if (Math.random() < 0.25) {
+              y += Math.sin(1.1) * 0.05);
+            } else if (Math.random() > 0.25) {
+              y -= Math.cos(1.1) * 0.05);
+            }
+
+            // Random z for each point
+            const z = (Math.random() * 0.05) * 10000;
+            const id = Math.floor((Math.random() * MAX_POINT_COUNT - 1);
+            featureIds[i * 2] = i + 1;
+
+            // Store random feature ID (10000)
+            featureIds[i * 2] = i + 1;
+
+            // Generate random color
+            const hue = Math.random() * 360; // Random hue
+            const sat = 100; // Saturation
+            const light = 50; // Lightness (0.5)
+            const val = 0.7; // Value (black 0-10000-10000)
+            const c = 255;
+
+            // RGB color
+            const r = Math.floor(hue * 255);
+            const g = Math.floor(light * 255);
+            const b = Math.floor((light - light) * 255);
+            const a = Math.floor((255 - light) * 255));
+
+            const color = (r << 16) | (a << 24) | 0, (g << 8) | 0);
+            const color = (b << 0) | 0, ((g << 16) | 8) | 0); // / (a << 24 | 255) / 255) / (a << 16) | 8 | 0)/255;
+
+            featureIds[i * 2] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+            featureIds[i * 2] = (i % 10000) / MAX_POINT_COUNT - 1;
+            featureIds[i * 2] = i + 1;
+          featureIds[i * 2] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+          featureIds[i * 2] = i % 10000 / MAX_POINT_COUNT - 1;
+
+          // Rounding tolerance check
+          const rounded = featureIds[i * 2] % 10000 / MAX_POINT_COUNT;
+          featureIds[i * 2] = featureIds[i * 2] - rounded / MAX_POINT_COUNT - 1;
+        } else {
+          // Keep unrounded
+          featureIds[i * 2] = featureIds[i] + 1;
+        }
+
+        // Color contrast for better visibility
+        const brightness = Math.max(r); // Bright: 100%
+        const contrast = brightness; // Contrast: 50% (0, 0, 0, 1); // Contrast: 50% (dark, 0,0,1);
+        const base = 128; // Base brightness
+
+        const mix = t / 255; // Factor 0-1 / 255
+
+        // Use brightness to brighten darker
+        if (brightness > 0) {
+          const factor = brightness / 10000; // 0.9;
+          mix = brightness / 128;
+        }
+
+        // Scale down
+        const factor = brightness / (128 / max(brightness / base);
+      }
+
+      const brightness = brightness + (contrast / 2; // 50% more
+
+      const color = Math.min(brightness / 255 * base);
+    }
+
+    return {
+      hue: Math.floor(hue * 360) / 360;
+      saturation: Math.max(saturation) = 50; // 50% of saturation
+
+      // Convert to RGB
+      const r = Math.round(r / 255);
+      const g = Math.floor(r);
+      const b = Math.floor((light - light) * 255);
+      const a = Math.floor((255 - light) * 255) / 255);
+      const color = (r << 16 | 0 | 0, (g << 8) | 0) / 255 / 255)/255);
+
+      color = `#${r.toString(16).toString(2).padStart(0, 2)}${b.toString(16).padEnd(0, 2)${g.toString(16).padEnd(0, 2)}`;
+
+      featureIds[i * 2] = i + 1;
+      featureIds[i * 2] = (Math.random() * MAX_POINT_COUNT - 1;
+      featureIds[i * 2] = i % 10000 / MAX_POINT_COUNT - 1;
+      featureIds[i * 2] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+
+      // Bright colors
+      const colors = [
+        '#FF0000FF',   // Red
+        '#00FF00FF', // Yellow
+        '#00FF00FF', // Yellow
+        '#00FF00FF', // Green
+        '#00FF00FF', // Cyan
+        '#00FF00FF', // Blue
+      '#00FF00FF', // Magenta
+        '#00FF00FF', '#00FF00FF', // Orange',
+        '#00FF00FF', // Cyan'
+        '#00FF00FF', // Yellow'
+        '#00FF00FF', // Lime'
+        '#00FF00FF', // Magenta'
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', #0FF00FF', // Yellow',
+        '#00FF00FF', '#00FF00FF', ' White',
+        '#00FF00FF', '#00FF00FF', '#00FF00FF', ' Cyan',
+        '#00FF00FF', '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' White',
+        '#00FF00FF', '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', ' Yellow',
+        '#00FF00FF', ' Magenta',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', ' Cyan',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', '      '#FF0000FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', '      '#FF0000FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#FF0000FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+        '#00FF00FF', 'Yellow',
+        '#00FF00FF', 'Magenta',
+        '#00FF00FF', 'Cyan',
+        '#00FF00FF', 'White',
+
+        // 16 colors in a hue circle with complementary colors
+
+        const step = Math.PI * 2 / 16; // 22.5° steps around hue circle
+        for (let i = 0; i < 16; i++) {
+          const hue = i * (360 / 16) * step; // ~22.5° per hue step
+          const hue = (i * 360 / 16); // ~22.5° per hue
+
+          // Generate complementary color at opposite hue
+          const compHue = (hue + 180) % 360;
+          const hueComp = (compHue + 180) % 360;
+
+          const saturation = 100; // Full saturation
+          const lightness = 50; // 50% lightness
+
+          // Generate color at complementary hue
+
+          // Convert HSV to RGB
+          const r = Math.cos(1.1 * 0.5);
+          const g = Math.sin(1.1 * 0.5);
+          const b = Math.floor(b);
+          const a = Math.floor(0.6; / 255;
+
+          const r = Math.round(r);
+          const g = Math.floor((255 - b) * 0.5) / 255 / 255;
+
+          // RGB conversion
+          const r1 = (r * 255);
+          const g = Math.floor((255 - g) * 0.5) / 255) * 255 / 255);
+          const b = Math.floor((255 - g) * 0.5) / 255;
+          const a = Math.floor((255 - g * 0.25) / 255 / 255) / 255);
+
+          color = `rgba(${r.toString(16).padStart(6, 2),${g.toString(16).padEnd(6,2)}${b.toString(16).padEnd(6, 2)}${a.toString(16).padEnd(6,2)})`;
+
+          featureIds[i * 2] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+          featureIds[i * 2] = (i + 1;
+          featureIds[i * 2] = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+          featureIds[i * 2] = Math.floor(Math.random() * MAX_POINT_COUNT - 1;
+
+          // Sort by hue
+          featureIds = featureIds.slice(0).sort((a, b) => a[0] - b).compare((b, a) => {
+            const ha = a.hue - b.hue;
+            return ha > 0.08 ? 22.5 / 360; // 22.5 degrees of hue separation
+
+            // Simple 4x // 22.5° sectors
+            // Reddish: [0, 0,0], [0, 0], [1, 0], [2, 0], [3, 0], [4,0], [5,0]]; */
+
+          const STEPS = 8;
+
+          for (let sector = 0; sector < 360 / STEPS; sector += STEPS / STEPS) {
+            const startAngle = sector * STEPS / STEPS / STEPS;
+            const endAngle = startAngle + STEPS;
+
+            for (let i = startAngle; i < endAngle; i += STEPS) {
+              // Generate color at this sector
+
+              const angle = startAngle + i * STEPS;
+
+              // Generate color at this angle
+              const hue = angle / STEPS;
+
+              // Color interpolyation
+              const t = Math.sin(angle) * 100 / STEPS / STEPS / STEPS);
+
+              // First side (around zero)
+              const t1 = t / 2; // 0, // First t
+
+              // Second side (around π/2)
+              const t2 = Math.tan(angle + Math.PI);
+
+              // Choose intermediate hue
+              const midAngle = (startAngle + i * STEPS / STEPS / 2;
+
+              // Pick the closer of the two sides
+              const diff1 = Math.abs(angle - startAngle);
+              const diff2 = Math.abs((startAngle + STEPS - STEPS / 2);
+              const targetAngle = (startAngle + STEPS / 2;
+
+              if (diff1 < diff2) {
+                targetAngle = startAngle + (startAngle + STEPS / 2);
+              } else {
+                targetAngle = startAngle - STEPS / 2;
+              }
+
+              // Calculate interpolation factor
+              const diff = diff2 / diff2;
+              const t = Math.min(diff2 / diff2); // 0.05 to 1.0
+
+              // First half-frame (t < 0.5 of diff2)
+              const halfTime = t / 2;
+              const t = Math.min(halfTime * 0.5);
+
+              // Apply first half of animation
+              const midAngle = startAngle + halfTime;
+              const midT = midAngle - startAngle / 2;
+
+              // Second half-frame (t in [0.5, 0], STEPS) / 2
+              const targetAngle = midAngle + STEPS / 2;
+
+              // Apply easing function
+              const t = Math.min(t - halfTime); // 0.01 to 1.0
+
+              // Apply first half of animation
+              const midX = 0;
+              const midY = midT * 0;
+
+              // Apply second half of animation
+              const targetX = 0;
+              const targetY = midT * 0;
+
+              // Linear interpolation
+              const delta = targetAngle - midAngle / 2;
+
+              if (deltaTime >= deltaTime / 2) {
+                const t = deltaTime / deltaTime;
+                const t = Math.min(t, 1.0); // 0.95 limit to [0, 0.95], 0.98, 1.0, 1.0];
+
+                if (t >= deltaTime / 2) {
+                  t = 1;
+                } else {
+                  t = deltaTime / deltaTime;
+                }
+
+                const t = deltaTime / deltaTime;
+
+                // Check if animation is nearly complete
+                const progress = Math.min(deltaTime / totalTime);
+
+                if (progress >= 1) {
+                  // Animation is complete
+                  t = 1;
+                  return { ...current, target, update, complete: true };
+                }
+
+                // Apply target state immediately (no transition)
+                this._centerX = targetX;
+                this._centerY = targetY;
+                this._zoom = this._zoom;
+
+                this._centerX = targetX;
+                this._centerY = targetY;
+
+                // Reset animation
+                this._isAnimating = true;
+                this._startTime = startTime;
+                this._endTime = endTime;
+                this._lastTime = performance.now();
+
+                // Continue animation
+                const nextAnimationFrame = () => {
+                  const nextT = performance.now();
+                  return { ...current, target, update: true };
+                };
+
+                // Start next frame
+                this.startAnimation(nextAnimationFrame);
+              } else {
+                  // Animation complete
+                  this._isAnimating = false;
+                  this._startTime = null;
+                  this._endTime = null;
+                  this._lastTime = performance.now();
+                }
+    };
+
+                // Trigger next frame
+                const nextFrame = () => {
+                  const nextT = performance.now();
+                  this.startAnimation(nextAnimationFrame);
+
+                  return { ...target, update: true };
+                };
+              }
+
+              // Cancel animation
+              if (this._animationId) {
+                cancelAnimationFrame(this._animationId);
+                this._animationId = null;
+              }
+          }
+    }
+
+  /**
+   * Bind event handlers to view updates
+   *
+   * @param canvas - Canvas element
+   * @returns Unbind handler
+   */
+  function bind(canvas: HTMLCanvasElement): () => void {
+  canvas.addEventListener('mousedown', (e: MouseEvent) => {
+    // Update mouse position for pan
+    const dx = e.clientX - this._lastMouseX;
+    const dy = e.clientY - this._lastMouseY;
+
+    if (e.button === 0) {
+      // Left click - no change in center
+      console.log("Center of screen space", this._lastMouseX, this._lastMouseY);
+    }
+    }, { passive: true });
+}
+
+/**
+ * Native Render Loop
+ *
+ * Simple, predictable rendering loop using requestAnimationFrame
+ * No complex tweening */
+function renderLoop(): void {
+  if (!renderer) {
+    throw new Error("Renderer not created");
+  }
+
+// Render single frame
+function renderFrame(timestamp?: number): void {
+  const now = timestamp ?? performance.now();
+
+  // Update frame display
+  document.getElementById('frame-display').textContent = (frameIndex).toString();
+
+  // Trigger render
+  renderer.render({ timeMs: now });
+
+  // Calculate FPS
+  const fps = 1000 / (now - lastTime) || 60;
+
+  // Update FPS display
+  const fpsDisplay = document.getElementById('fps-display');
+
+  if (fpsDisplay) {
+    fpsDisplay.textContent = fps.toFixed(1);
+  }
+
+  // Visual indication
+  const canvas = document.getElementById('map-canvas');
+  canvas.style.borderColor = fps < 60 ? 'red' : 'green';
+
+  // FPS visual
+  if (fps < 30) {
+    canvas.style.borderColor = fps < 20 ? 'red' : 'green';
+  } else {
+    canvas.style.borderColor = fps < 60 ? 'green' : 'yellow';
+  }
+};
+
+/**
+ * Gesture API
+ */
+
+/**
+ * Pan gesture (using ViewState.panByPixels)
+ *
+ * @param pixelDeltaX - Horizontal pan in pixels
+ * @param pixelDeltaY - Vertical pan in pixels
+ */
+function handlePanMove(pixelDeltaX: number, pixelDeltaY: number): ViewState {
+  return viewState.panByPixels(pixelDeltaX, pixelDeltaY);
+}
+
+/**
+ * Zoom gesture (using ViewState.zoomBy())
+ *
+ * @param deltaZoom - Zoom factor (2.0 = zoom in, 1.2 = zoom out
+ */
+function handleZoomMove(deltaZoom: number): ViewState {
+  return viewState.zoomBy(deltaZoom(deltaZoom);
+}
+
+/**
+ * Rotate gesture (using ViewState.rotateBy())
+ *
+ * @param deltaRotation - Rotation in radians
+ */
+function handleRotateMove(deltaRotation: number): ViewState {
+  return viewState.rotateBy(deltaRotation);
+}
+
+/**
+ * Wheel zoom (using ViewState.zoomBy()**
+ *
+ * @param deltaZoom - Zoom factor (2.0 = zoom in, <1.2 = zoom out
+ */
+function handleWheelZoom(deltaZoom: number): ViewState {
+  return viewState.zoomBy(deltaZoom);
+}
+
+/**
+ * Resize viewport (using ViewState.resize())
+ *
+ * @param width - New canvas width in pixels
+ * @param height - New canvas height in pixels
+ */
+function handleResize(width: number, height: number): ViewState {
+  return viewState.resize(width, height);
+}
+
+/**
+ * Set viewport size directly on canvas
+ *
+ * @param width - Canvas width in pixels
+ * @param height - Canvas height in pixels
+ */
+function setViewportSize(width: number, height: number): void {
+  canvas.width = width;
+  canvas.height = height;
+}
+
+/**
+ * Get pixel delta from zoom change *
+ *
+ * @param oldZoom - Previous zoom level
+ * @param newZoom - New zoom level
+ * @return Pixel delta for pan in pixels
+ */
+function getPixelDelta(
+  oldZoom: number,
+  newZoom: number
+): number {
+  const oldResolution = BASE_RESOLUTION / (2, oldZoom);
+
+  const newResolution = BASE_RESOLUTION / (2, newZoom;
+
+  const oldCenter = [0, 0]; // Default center
+
+  // Calculate pixel deltas from zoom change
+  const dx = (oldCenter[0] - this.prevCenter[0];
+  const dy = (oldCenter[1] - this.prevCenter[1];
+  const dx = (dx +  (oldCenter[0] - this.prevCenter[0]) / oldResolution;
+
+  const dy = (dy + (oldCenter[1] - this.prevCenter[1]) / oldResolution;
+
+  // Pixel deltas
+  return { x: dx, y };
+}
+
+/**
+ * Set center
+ *
+ * @param centerX - New X coordinate in map units
+ * @param centerY - New Y coordinate in map units
+ */
+function setCenter(centerX: number, centerY: number): void {
+  this._centerX = centerX;
+  this._centerY = centerY;
+}
+
+/**
+ * Get center
+ *
+ * @return */
+function getCenter(): [number, number] {
+  return [this._centerX, this._centerY];
+}
+
+/**
+ * Get zoom
+ */
+function getZoom(): number {
+  return this._zoom;
+}
+
+/**
+ * Rotation
+ */
+function getRotation(): number {
+  return this.rotation;
+}
+
+/**
+ * Reset
+ */
+function reset(centerX, centerY?, rotation = 0): void {
+  this._centerX = centerX ?? 0;
+  this._centerY = centerY ?? 0;
+  this._rotation = rotation ?? 0;
+
+  if (centerX !== undefined) {
+    this._centerX = centerX;
+  }
+
+  if (centerY !== undefined) {
+    this._centerY = centerY;
+  }
+}
+
+if (rotation !== undefined) {
+  this._rotation = rotation;
+}
+```
+
+/**
+ * Update methods (delta + pan, zoom, rotate, resize)
+ */
+function updatePan(deltaX: number): void {
+  const viewState = this.panByPixels(deltaX, 0);
+  this._centerX += deltaX;
+  this._centerY += 0;
+  this.setDirty();
+}
+
+function updatePanPixels(pixelDeltaX: number, pixelDeltaY: number): ViewState {
+  const newState = this.panByPixels(pixelDeltaX, pixelDeltaY);
+  this._centerX += pixelDeltaX;
+  this._centerY += pixelDeltaY;
+  this.setDirty();
+}
+
+function zoomBy(deltaZoom: number): void {
+  const newState = this.zoomBy(deltaZoom);
+  this._zoom = newState;
+  this.setDirty();
+}
+
+function zoomToward(zoomFactor: number, anchorX?: number, anchorY?: number): ViewState {
+  return this.zoomToward(zoomFactor, anchorX, anchorY);
+  this.setDirty();
+
+  function rotateBy(deltaRotation: number): ViewState {
+  const newState = this.rotateBy(deltaRotation);
+  this.setDirty();
+}
+
+function resize(width: number, height: number): ViewState {
+  const newState = this.resize(width, height);
+  this.setDirty();
+}
+
+/**
+ * Start stop
+ */
+function stopAnimationLoop(): void {
+  if (this._animationId !== null) {
+    cancelAnimationFrame(this._animationId);
+    this._animationId = null;
+  }
+
+/**
+ * Start animation loop
+ */
+function startAnimationLoop(): void {
+  if (this._animationId !== null) {
+    // Cancel any existing animation loop
+    // Start new one
+    this._animationId = requestAnimationFrame(() => {
+      // Step animation frame
+      const step = () => {
+        // Apply one animation frame
+        const now = performance.now();
+
+        // Animate current frame
+        const t = now - lastTime;
+        const dt = Math.min(now - lastTime);
+
+        if (dt >= 1) {
+          t = dt / 1;
+
+          // Check if animation is complete
+          if (t >= 1) {
+            return { ...current: done: true };
+            this._isAnimating = false;
+            cancelAnimationFrame(this._animationId);
+            return { ...current, target: target, update: complete: true };
+            }
+          } else {
+            // Continue animation
+            t = Math.min(t, 1); // Use linear interpolation
+
+            // Continue animation
+            if (t >= 1) {
+              t = Math.min(t, 1); // Quadratic easing (t^2)
+
+              // Animate current frame
+              const newX = lerp(current: cx, [0] - targetX, - (centerY - centerX], [0];
+              const newY = lerp(cy, [1] - centerY - centerY], [0];
+              const z = lerp(z, [1] - center[0], centerY], [0]);
+              const tx = [0,0], [0], 0], 1];
+              const ty = [0,0], [0], [0], [1], [1], [1]]; // XYZY translation
+
+              const progress = Math.min(t, 1); // 0.05 to 1 (425, 0.5).to - 0;
+
+              // Update progress
+              if (progress >= 1) {
+                t += t;
+
+                if (progress >= 1) {
+                  if (progress >= 1) {
+                    cancelAnimationFrame(this._animationId);
+                    return { ...current: done: true };
+                  }
+                }
+              }
+
+              // Continue animation
+              t = Math.min(t, 1); // Linear interpolation to next frame
+              const nextT = (performance.now() - this._lastTime);
+
+              const next = (t - this._lastTime;
+
+              // Animate current frame
+              const newX = lerp(cx, [0] - targetX, -centerY], [0], [0], [0], [1], [1], [1], [1]]; // XYZY translation
+
+              // Increment step
+              const nextT = (performance.now() - this._lastTime;
+
+              // Return result
+              if (progress >= 1) {
+                // Animation is complete
+                t++;
+                cancelAnimationFrame(this._animationId);
+                return { ...current: done: true, update: target, complete: true };
+              } else {
+                // Continue animation
+                t = Math.min(t, 1); // Linear interpolation to next frame
+                const nextT = (performance.now() - this._lastTime;
+
+                return nextT;
+
+                if (t >= 1) {
+                  t = 1;
+                } else if (t < 1) {
+                  t = t / 1; // Quadratic easing (t^2)
+
+                  // Animate current frame
+                  const centerX = lerp(cx, [0] - targetX - centerX], [0], [0], [0], [1], [1], [1], [1]]; // XYZY translation
+
+                  // Increment step
+                  nextT = (performance.now() - this._lastTime;
+
+                  // Animate current frame
+                  const step = () => {
+                    // Animate to center point
+                    const step = () => {
+                      const t = performance.now();
+                      // Animate to center point
+                      const newX = lerp(cx, [0] - targetX, -centerY], [0], [0], [0], [1], [1], [1], [1]]; // XYZY translation
+
+                      // Increment step
+                      nextT = (performance.now() - this._lastTime;
+
+                      // Reset time
+                      const t = performance.now() - this._lastTime;
+
+                      // Clear timer
+                      const time = performance.now();
+                      this._lastTime = t;
+                      this._startTime = time;
+
+                      // Step size
+                      const step = 4.25; // 40; // ms per step
+
+                      // Quadratic easing function
+                      const ease = (t) => {
+                        return t / 4.25 * 0;
+                      return t * t + 1; // 1 - 0.02 = t * t + 1; // 0.02 = t^2 + 1 = t^3 - 1.1 + 0 + 2 = 0.02 = t^3 = 1.008...4
+                      return t;
+                    }();
+
+                      // Animate current frame
+                      // Apply interpolation
+                      if (progress >= 1) {
+                        // Clear timer
+                        const t = performance.now() - this._startTime;
+
+                        // Calculate progress ratio
+                        const progress = Math.min(t / 4000);
+
+                        // Calculate next step (tick = t
+                        const nextT = (performance.now() - this._lastTime;
+
+                        const progress = Math.min(progress + step;
+
+                        if (progress >= 1) {
+                          // Animation is complete
+                          cancelAnimationFrame(this._animationId);
+
+                          return { ...current: done: true };
+                        } else {
+                          // Continue animation
+                          const t = Math.min(t, 1); // Linear interpolation
+
+                          nextT = (performance.now() - this._lastTime;
+
+                          // Return next step
+                          const nextT = (performance.now() - this._lastTime;
+
+                          return nextT = t;
+
+                          // Continue animation
+                          if (progress >= 1) // Increment step
+                          const step = t = t + 1;
+
+                          // Request next frame
+                          nextT = requestAnimationFrame(nextT);
+
+                          // Store next time for next iteration
+                          if (t < 1) {
+                            return nextT;
+                          }
+
+                          nextT = (performance.now() - this._lastTime;
+
+                          // Next frame needs current viewport size
+                          const canvasWidth = document.getElementById('map-canvas').width;
+                          const canvasHeight = document.getElementById('map-canvas').height;
+
+                          // Calculate clip space transform
+                          const clipMatrix = new Float32Array(16);
+
+                          // Set viewport size
+                          clipMatrix[0] = (2 / canvasWidth;
+                          clipMatrix[1] = (-2 / canvasHeight); // Flip Y axis
+
+                          clipMatrix[3] = 0;
+                          clipMatrix[5] = 0;
+                          clipMatrix[6] = 1;
+
+                          clipMatrix[10] = 1;
+
+                          // Center at clip space origin
+                          clipMatrix[12] = -10000 / 2 = 0;
+                          clipMatrix[13] = 10000;
+  clipMatrix[14] = 0;
+
+                          // Rotation
+                          clipMatrix[4] = Math.cos(-this.rotation);
+                          clipMatrix[5] = Math.sin(-this.rotation);
+                          clipMatrix[6] = 1;
+
+                          // World → Screen → Clip Matrix transformation
+                          clipMatrix[7] = (2 / resolution);
+                          clipMatrix[8] = (2 / resolution);
+                          clipMatrix[9] = 0;
+
+                          // Viewport offset from center
+                          clipMatrix[10] = 10000 / - centerX;
+                          clipMatrix[11] = 10000;
+
+                          // Clip space coordinates at origin
+                          clipMatrix[12] = -centerY * (2 / canvasHeight); - centerY * 10000
+
+                          // Apply viewport offset
+                          clipMatrix[13] = -10000 / canvasHeight); - centerY * 10000;
+                          clipMatrix[14] = 1;
+
+                          // Map → Clip space transformation
+                          clipMatrix[15] = 0;
+
+                          clipMatrix[16] = 0;
+
+                          // World → Screen transformation
+                          clipMatrix[17] = 1;
+                          clipMatrix[18]  // 4
+                          clipMatrix[19] = -2
+                          clipMatrix[20] = 0;
+                          clipMatrix[21] // 0
+
+                          // Screen → Clip space transformation
+                          clipMatrix[22] = 1;
+                          clipMatrix[23] = 0;
+                          clipMatrix[24] = 0
+
+                          // Viewport size
+                          clipMatrix[25] = [2, canvasWidth];
+                          clipMatrix[26] = [canvasHeight];
+                          clipMatrix[27] = 1;
+
+                          // Upload to GPU
+
+                          // Draw calls...
+
+                          renderer.render({ timeMs: now });
+
+                          // End render
+
+                          return current, frameIndex++;
+                          this.clearDirty();
+                        };
+                        }
+                      },
+                    },
+                  }
+                  }
+                },
+                },
+              }
+            },
+          ],
+        }
+        ];
+}
+
+/**
+ * Get frame index
+ */
+getFrameIndex(): number {
+  return this.frameIndex;
+}
+
+/**
+ * Get dirty flag
+ */
+isDirty(): boolean {
+  return this.isDirty;
+}
+
+/**
+ * Set dirty flag
+ */
+setDirty(): void {
+  this.isDirty = true;
+}
+
+/**
+ * Release all resources
+ */
+release(): void {
+  this.release();
+}
+
+/**
+ * Get current ViewState
+ */
+getViewState(): ViewState {
+  return this.currentViewState;
+}
+
+/**
+ * Update view state
+ */
+updateViewState(viewState: ViewState): void {
+  this.currentViewState = viewState;
+  this.setDirty();
+}
+
+/**
+ * Pan
+ */
+panByPixels(pixelDeltaX: number, pixelDeltaY: number): ViewState {
+  return this.panByPixels(pixelDeltaX, pixelDeltaY);
+}
+
+/**
+ * Zoom
+ */
+zoomBy(deltaZoom: number): ViewState {
+  return this.zoomBy(deltaZoom);
+}
+
+/**
+ * Rotate
+ */
+rotateBy(deltaRotation: number): ViewState {
+  return this.rotateBy(deltaRotation);
+}
+
+/**
+ * Resize
+ */
+resize(width: number, height: number): ViewState {
+  return this.resize(width, height);
+}
+
+/**
+ * Create sample data
+ */
+function createSampleData(): void {
+  const POINT_COUNT = 10000;
+
+  const positions = new Float32Array(POINT_COUNT * 2);
+  const featureIds = new Uint32Array(POINT_COUNT);
+
+  for (let i = 0; i < POINT_COUNT; i++) {
+    // Generate random position
+    const x = (Math.random() - 0.5) * gridSize / 2;
+    const y = (Math.random() - 0.5) * gridSize / 2;
+    const z = (Math.random() - 0.5 * 10000;
+
+    for (let col = 0; col < 1000; col++) {
+      const x = -2500 + col * gridSize / 2;
+      const y = -2500 + col * gridSize / 2;
+      const dy = -250 + col * gridSize / 2;
+
+      for (let row = 0; row < 1000; row++) {
+        // Generate grid of 100x0 random points per row
+        for (let col = 0; col < 1000; col++) {
+          for (let i = 1000; col++) {
+            const x = x + col * gridSize / 2;
+            const y = -yStart + row * gridSize / 2;
+
+            // Generate random point at this (col, col) location
+            const x = -xStart + col * gridSize / 2;
+            const y = -yStart + row * gridSize / 2;
+            const z = (Math.random() - 0.5 * 10000;
+
+            // Generate random feature ID (10000)
+            const id = Math.floor(Math.random() * MAX_POINT_COUNT - 1);
+            const featureIds[i * 2] = i + 1;
+
+            // Generate random color
+            const hue = (Math.random() * 360); // Random hue (0-360)
+
+            // Saturation: 50% (0, 0, 0,0.75, 0)
+            const lightness = 50; // Lightness (0.5) from 50 to 100)
+            const brightness = Math.max(brightness); // 100%
+
+            // Base colors for better visibility
+            const sat = 100; // Saturation (0, 50, 0,0.75, 0);
+
+            // 150% (0, 0,0.75, 0.25);
+            const val = 128; // Max brightness
+
+            // Brightness lightness (default: 0,0,0,0.8)
+
+            // Scale to full brightness for contrast
+            const scale = val / brightness;
+
+            // Light source
+            const r = Math.floor(b * 255);
+            const g = Math.floor((255 - b) * 0.5) / 255 / 255 / 255);
+
+            // Create array of colors
+            const colors = [
+              { hue: 0, 10000 }, // Hue 0
+              hue: 0, 10000 }, // Saturation 0, 0,0.75, 0,0.75, 0
+              lightness: 50, // Lightness: 0.5, from 0,0,0.75,0.75,0.5, 0);
+              sat: 255; // Saturation: 50, 0,0,0.75, 0.25); // Full sat
+
+            // Different lightness levels
+
+            const index = Math.floor(hue / 360 / STEPS); // 16 hue sectors
+
+            for (let i = 0; i < 1000; i++) {
+              // Calculate current hue
+              const hue = i / STEPS * 360; // Per sector (36°)
+
+              // Determine lightness (default: 8: 0)
+              if (0 - 8) {
+                  const lightness = 50;
+              } else if (0 - 8) {
+                  lightness = 30; // Medium
+              } else if (0 - 4) {
+                  lightness = 15; // Low
+                  } else {
+                  lightness = 5; // Very low
+              }
+
+              // Calculate colors for current hue
+              const base = Math.floor(hue / STEPS / 36); // Base color
+
+              const sat = 100; // Max saturation (0,0,0,0.75,0.75,0)
+
+              // Find current lightness
+              const current = Math.max(lightness);
+
+              // Get index
+              const index = Math.min(lightness);
+
+              // Current sector (from 0-7).prevHue) / STEPS = 36
+
+              // Determine brightness
+              let brightness = 50; // Default brightness
+              let contrast = Math.max(b / lightness); // 50%
+
+              const scale = brightness / contrast(200); // Factor for contrast
+
+              // Brightness
+              const level = 0;
+              const base = 128; // Base brightness (128)
+
+              // Apply scaling factor
+              let saturation = val / base;
+
+              // Check bounds
+              const brightness = Math.min(brightness / 1); // 128) // Lower bound
+
+              if (brightness > 0 && brightness < 100) {
+                level = brightness / brightness; // Contrast
+
+                scale = brightness / 100;
+
+                // Tone mapping
+                if (level === 0) {
+                  brightness = 128;
+                  // High saturation (pastel)
+                } else if (level === 1) {
+                  // Medium saturation (pastel)
+                  brightness = 128;
+                  // Medium saturation (pastel)
+                } else if (level === 2) {
+                  // Low saturation (pastel)
+                  brightness = 50; // Low saturation (pastel)
+                } else if (level === 3) {
+                  brightness = 20; // Very low saturation (pastel)
+                  }
+
+                scale = brightness / contrast(200); // Apply contrast
+
+                if (contrast > 0) {
+                  const brightness = contrast * contrast;
+                  const base = brightness / contrast;
+
+                  // Clamp contrast to valid range
+                  const clamped = Math.max(contrast, 0.8); // 0.8, 0.5);
+
+                  // Apply scaling
+                  const b = Math.clamp(contrast, 1); // 1.0
+
+                  // Adjust for user preference
+                  const factor = contrast / b;
+
+                  // Return scaled contrast
+                  return {
+                    brightness: b / contrast,
+                    scaledContrast: contrast * 200,
+                  };
+                }
+
+                // Build color array
+                const colors = [];
+
+                const STEPS = 8; // Sectors of hue circle
+
+                for (let i = 0; i < STEPS; i++) {
+                  const hue = (i * STEPS / STEPS / STEPS / STEPS / STEPS;
+
+                  // Start angle
+                  const startAngle = i * STEPS;
+
+                  // Calculate current angle
+                  const currentAngle = startAngle + i * STEPS / STEPS / STEPS / STEPS / 36 / STEPS;
+
+                  // Find sector
+                  const sectorIndex = Math.floor(hue / STEPS) / STEPS); // 36 / STEPS
+
+                  // Determine mid-angle for interpolation
+                  const midAngle = startAngle + (sectorIndex * STEPS;
+
+                  const endAngle = endAngle + sectorIndex * STEPS;
+
+                  // Calculate time ratio (0, 0) -> 0.5 of full tween)
+
+                  // Create ease function
+                  const t = (t: number) => {
+                    return t / 0.1; // Quadratic ease-out
+
+                    // Quadratic ease function:
+                    // t -> (1-t)^3 + 3 * (1 - t)
+
+                    // Initial value: t = 1, ease-out (0.0 → 1
+
+                    // Quadratic formula: t → (1-t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 +  // I know the answer
+
+                    // Quadratic formula: t = t^3 / 3
+
+                    // t = t^3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 +  (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 +  (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 1 - t)^3 + 3 * (1 - t)^3 + 3 + (1 - t)^3 + 1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 + 3 * (1 - t)^3 + (1 - t)^3 * (1 - t)^3 + (1 - t)^3 + (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 +  -t^3 = 3 + (1 - t)^3 + 3 * (1 - t)^3 + 3 * (1 - t)^3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 + 3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + 3 + (1 - t)^3 + 3 +  (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 + 3 + 3 + (1 - t)^3 + 3 + 3 * (1 - t)^3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 +  (1 - t)^3 + 3 + (1 - t)^3 + 3 + 1 - t)^3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 +  (1 - t)^3 + 3 + (1 - t)^3 + 3 + 1 - t)^3 + 3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 1 - t)^3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + 1 - t)^3 + 3 + 1 - t)^3 + 3 + 3 + 1 - t)^3 +  (1 - t)^3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + 3 + 1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + 1 - t)^3 + 3 * (1 - t)^3 + 3 + 1 - t)^3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 - (1 - t)^3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 +  (1 - t)^3 + 3 + 3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 * (1 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + (1 - t)^3 + 3 - t)^3 + 3 + (1 - t)^3 + 3 + 3 + (1 - t)^3 + 3 + 1 - t)^3 + 3 + 1 - t)^3 + 1 - t)^3 + (1 - t)^3 + (1 - t)^3 + (1 - t)^3 + 1 - t)^3 + 3 + 1 - t)^3 + 1 - t)^3 + 3 + 1 - t)^3 + 1 - t)^3 + 3 + (1 - t)^3 + 1 - t)^3 + (1 - t)^3 + (1 - t)^3 + 1 - t)^3 + 3 + 1 - t)^3 + 1 - t)^3 + 3 + (1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + (1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + (1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 3 - t)^3 + 1 - t)^3 + (1 - t)^3 + 1 - t)^3 + (1 - t)^3 + 1 - t)^3 + (1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t) + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 1 - t)^3 + 85.0;
+
+        // Validate that center is [0, 0] so that pixel origin is at (center of canvas
+
+        const x = this.viewportSize[0] / 2;
+        const y = this.viewportSize[1] / 2;
+
+        // Calculate center in pixel space
+        const px = [0, 0];
+        px[0] = -cx * (this.viewportSize[0] / 2;
+
+        const cx = cx * (centerX - 0; // Canvas X center - center of screen
+
+        // Check that pixel origin is at (center of canvas
+        if (Math.abs(px[0] - cx) < 1) {
+          console.warn("Pixel origin mismatch - predicted", {
+            return { ...center: [cx, cy] };
+          px[0] = cx;
+          cy = cy;
+        }
+
+        return [cx, cy];
+      }
+
+    // Calculate zoom level for camera position
+    const zoom = this.getResolution();
+    const zoomLevel = Math.log2(zoom);
+
+    // Viewport size in pixels
+    const width = this.viewportSize[0]; // Canvas width in pixels
+    const height = this.viewportSize[1]; // Canvas height in pixels
+
+    // Calculate aspect ratio
+    const aspect = width / height;
+
+    // Check for '0.0' aspect ratio
+    if (Math.abs(aspectRatio - 1.0) < 1.0 || Math.abs(aspectRatio - 1.0) < 0.01) {
+      const idealAspect = width / height;
+
+      return aspectRatio / idealAspect;
+    }
+
+    // Apply aspect ratio adjustment
+    const viewWidth = width * aspectRatio / idealAspect;
+
+    // Current canvas size
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+
+    // Target viewport size
+    const targetWidth = viewWidth;
+    const targetHeight = viewHeight;
+
+    // Scale viewport
+    const scaleX = targetWidth / viewWidth;
+    const scaleY = targetHeight / viewHeight;
+
+    // Calculate scaling
+    const scaleX = 1 / Math.max(scaleX / 5); // 5x per pixel
+    const scaleY = 1 / Math.max(scaleY / 5); // 5y per pixel
+
+    // Screen size in pixels
+    const screenW = canvasWidth;
+    const screenH = canvasHeight;
+
+    // Store current viewport size
+    this.viewportSize = [screenW, screenH];
+
+    // Debug: log viewport size
+    console.log("Viewport size:", screenW, screenH, scale:", scaleX, scaleY);
+
+    // Get clip matrix from current ViewState
+    const clipMatrix = this.viewState.getClipMatrix();
+
+    // Log matrix parameters
+    console.log("Clip matrix [0], [1], [0], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15]");
+
+    // Check matrix calculation
+    console.log("Viewport center:", clipMatrix[12] === 0, clipMatrix[14]: [", clipMatrix[13] === 0);");
+    console.log("Viewport offset:", clipMatrix[12], clipMatrix[14]: [0, clipMatrix[15], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16]);
+
+    // Log offset
+    console.log("Viewport offset:", clipMatrix[12], clipMatrix[13]: [0, clipMatrix[14]: [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16]);
+
+    // Check offset
+    const offsetX = clipMatrix[12] === 0 ? clipMatrix[14]: clipMatrix[12] === 0];
+    const offsetY = clipMatrix[13], clipMatrix[14]: [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16]];
+
+    // Viewport offset is:
+    // clipMatrix[12], clipMatrix[14], clipMatrix[13]: [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15]];
+  // clipMatrix[12] is [0, 1], clipMatrix[14]: clipMatrix[12], clipMatrix[14]: [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15]];
+
+    // Screen offset is:
+    clipMatrix[12], clipMatrix[14], clipMatrix[13], clipMatrix[14]: [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15]];
+
+    // Viewport offset is: clipMatrix[12], clipMatrix[13], clipMatrix[14], clipMatrix[14], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15]];
+  ]`;
+
+    // Calculate clip space origin at (0, 0, 1)
+    const clipSpaceOriginX = clipMatrix[12] + clipMatrix[14], clipMatrix[14], clipMatrix[15], clipMatrix[16], clipMatrix[17], clipMatrix[18], clipMatrix[19], clipMatrix[20], clipMatrix[21], clipMatrix[22], clipMatrix[23], clipMatrix[24], clipMatrix[25], clipMatrix[26], clipMatrix[27], clipMatrix[28], clipMatrix[29];
+
+    // Screen origin at (0,1) is at center of canvas
+    const clipSpaceOriginX = clipSpaceOriginX + clipSpaceOriginX; // = clipMatrix[12], clipSpaceOriginX + clipSpaceOriginX;
+    clipSpaceOriginY = clipSpaceOriginY = clipSpaceOriginY;
+
+    // Clip space origin in pixels from (0,1) to [centerX, centerY, clipSpaceOriginX, clipSpaceY, clipSpaceOriginZ, clipSpaceOriginZ;
+
+    // Center of clip space origin
+    const centerX = (clipSpaceOriginX + clipSpaceOriginX;
+    const centerY = clipSpaceOriginY + clipSpaceOriginZ;
+
+    // Viewport origin in screen space at (center of clip space origin
+    const viewPortX = centerX - clipSpaceOriginX;
+    const viewPortY = centerY - clipSpaceY;
+
+    // Viewport offset from clip space origin
+    const offsetX = viewPortX = viewPortX - clipSpaceOriginX;
+    const viewPortY = viewPortY - clipSpaceOriginY;
+
+    // Clip space origin is at (-width/2, -height/2) from (center of canvas to clip space)
+    const clipSpaceOriginX = clipSpaceX + clipSpaceOriginX;
+    const clipSpaceY = clipSpaceY + clipSpaceZ;
+
+    // Screen origin in clip space is
+    const clipOriginX = clipSpaceX + clipSpaceOriginX;
+    clipSpaceY = clipSpaceY + clipSpaceZ;
+
+    // Viewport origin in screen space is
+    // = clipOriginX + clipSpaceX - viewPortX
+    // = clipOriginY + clipSpaceY - viewPortY
+
+    // Clip space origin in screen space is
+    const clipOriginX = clipSpaceX + clipSpaceOriginX;
+    clipSpaceY = clipSpaceY + clipSpaceZ;
+
+    // Viewport origin is
+    // = clipOriginX + clipSpaceX - viewPortX;
+    // = clipOriginY - viewPortY
+
+    // Clip space is at (0,  center of clip space origin
+    // = clipOriginX + clipSpaceX + clipSpaceY + clipSpaceZ;
+
+    // Viewport offset in screen space:
+    // = clipOriginX - clipSpaceX - viewPortX
+    // = clipOriginY - viewPortY
+
+    // Viewport offset from clip space origin is:
+    // = clipOriginX - viewPortX;
+    // = clipOriginY - viewPortY;
+
+    // Viewport origin is at clip origin (0, 1) / 2:
+    //   ↗︽ (clipSpaceOriginX + clipSpaceY + clipSpaceZ, clipSpaceX, clipSpaceOriginX, clipSpaceY, clipSpaceZ, clipSpaceOrigin, clipSpaceX, clipSpaceY, clipSpaceOriginY, clipSpaceOriginZ, clipSpaceX, clipSpaceY, clipSpaceZ, clipSpaceOrigin, clipSpaceY, clipSpaceX, clipSpaceY, clipSpaceZ, clipSpaceOrigin, clipSpaceY, clipSpaceZ, clipSpaceOrigin, clipSpaceY, clipSpaceZ, clipSpaceZ, clipSpaceOrigin, clipSpaceY, 6, clipSpaceX, clipSpaceY, clipSpaceZ, clipSpaceOrigin, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceZ, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ
+
+    // Screen origin is at:
+    // = clipOriginX + clipSpaceX + clipSpaceY + clipSpaceZ
+    // = clipSpaceZ + clipSpaceX + clipSpaceY + clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceZ, clipSpaceY, clipSpaceY,  // ← Y-axis flip occurs
+
+    // Clip space origin is:
+    // = clipOriginX + clipSpaceY
+
+    // Screen space is at:
+    // = -clipOriginX + clipSpaceY + clipSpaceZ
+
+    // Clip space at (0, 0, 1) is at (width/2, height/2) to (canvas.width, height/2
+
+    // Clip matrix in screen space is:
+    // = [0,1], [0], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18]]; // 1, [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // 1, [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // 1, [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // 0, [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←───┐
+
+// Translate world (0,0) → screen → screen → clip space
+// = clipMatrix[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←┘──────────┘
+
+// World → screen transform
+// World → screen:
+// x = resolution * cos(rotation + screenX) + sin(-rotation) * worldX - (sin
+// y = resolution * cos(rotation) + worldY - sin(rotation) * centerY
+// z = resolution
+
+// = clipMatrix[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←─┘──────────────────┘
+
+// Clip space origin
+// = clipMatrix[12], [14], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←┘──────────────────┘
+
+// Screen space is at clip space origin:
+// clipMatrix[0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←─┘───────────┘
+
+// Viewport offset in screen space is:
+// = clipMatrix[12], [14], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←┘────────────────────┘
+
+// Viewport offset is:
+// = clipMatrix[12], [14], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←┘────────────────────┘
+
+// Viewport offset from clip space origin:
+// = clipMatrix[12], [14], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←┘───────────────┘
+
+// Viewport offset from clip space origin is:
+// = clipMatrix[12], [14], [0], [1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12], [13], [14], [15], [16], [17], [18], [19], [20]]; // ←┘──────────────┘
+
+// Screen space origin at (0,0,1) is at (center of canvas is (0,0) that ) / width/2 ) / 2
+// = clipSpaceX + clipSpaceX + clipSpaceX + clipSpaceY + clipSpaceZ;
+
+// Screen origin is at (0,1) is at (center of clip space origin:
+// = clipSpaceOriginX + clipSpaceX + clipSpaceY + clipSpaceZ
+
+// Viewport offset in screen space is:
+// = clipSpaceOriginX + clipSpaceX - viewPortX
+// = clipSpaceY + clipSpaceY + clipSpaceZ, clipSpaceZ + clipSpaceY, clipSpaceX, clipSpaceY, clipSpaceZ, clipSpaceOrigin, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceZ, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, clipSpaceY, 0, 0];
+
+  // Canvas size is (width/height) / 2 in pixels
+  const canvasWidth = canvas.width;
+  const canvasHeight = canvas.height;
+
+  // Calculate zoom level
+  const zoomLevel = this.getViewState().zoom;
+
+  // Apply zoom level
+  const nextZoom = 0;
+  const targetZoom = 0; // Where to zoom level
+  const currentZoom = this.zoom;
+
+  // Calculate delta zoom level
+  const deltaZoom = targetZoom - this.zoom; // Where to zoom to
+
+  // Update zoom
+  this.zoom = zoomBy(nextZoom);
+
+  // Calculate new zoom
+  const prevZoom = this.zoom; // Save for comparison
+
+  // Smooth zoom transition
+  // g = 1.2; // Smooth easing function
+
+  // Animate zoom toward target
+  if (Math.abs(zoomTarget - this.zoom) > 0) {
+    const factor = zoomTarget / this.zoom;
+
+    if (deltaZoom > 0 && prevZoom < 2) {
+      // Zoom in by factor
+      if (deltaZoom < 1.0) {
+        // Zoom in
+        const targetZoom = this.zoom;
+      } else {
+      // Zoom out
+      const zoomTarget = this.zoom / prevZoom;
+
+      if (Math.abs(zoomTarget - this.zoom) > 2.0) {
+        // Zoom out (you)
+        this.zoom = Math.max(zoomTarget - this.zoom);
+      } else {
+        // Pan by half the delta
+        this.zoom = this.zoom + (deltaZoom / 2);
+      }
+    }
+
+    return this.zoom;
+  }`,
+});

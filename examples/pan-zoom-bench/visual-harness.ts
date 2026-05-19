@@ -9,6 +9,7 @@ import {
 
 const COL_MAJOR_IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
+/** Deterministic PRNG (not `Math.random()`); same seed ⇒ same layout on every OS. */
 function mulberry32(seed: number): () => number {
   return () => {
     let t = (seed += 0x6d2b79f5);
