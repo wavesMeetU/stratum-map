@@ -10,8 +10,7 @@
  * - Both modes share of same renderer implementation
  */
 
-import { WebGpuPointsRenderer, type WebGpuPointsRendererOptions } from "./renderer/webgpu-points-renderer.js";
-import type { MapControllerOptions } from "./map-controller.js";
+import { WebGpuPointsRenderer } from "./renderer/webgpu-points-renderer.js";
 import { MapController } from "./map-controller.js";
 import type { ViewState } from "./core/view-state.js";
 import type { GeometryBufferView } from "./core/geometry-buffer.js";
@@ -124,7 +123,9 @@ export async function bootstrapStandalone(
   }
 
   // 5. Start render loop (only in standalone mode)
-  controller.startRenderLoop();
+  if (controller) {
+    controller.startRenderLoop();
+  }
 
   return {
     renderer,
@@ -153,13 +154,18 @@ export function hasOpenLayers(): boolean {
  * 2. Application intent (via mode parameter)
  */
 export async function bootstrapAuto(
-  options: Omit<"initialGeometry" | "device" | "gpuBufferPool" | "canvas"> & { mode?: BootstrapMode },
+  options: StandaloneBootstrapOptions,
 ): Promise<StandaloneBootstrapResult> {
   // Check if OpenLayers is available
   const hasOL = hasOpenLayers();
 
   // Determine mode based on intent and availability
-  const mode: "openlayers" | "standalone" = options.mode ?? "standalone";
+  let mode: "openlayers" | "standalone";
+  if (options.mode === "openlayers" || options.mode === "standalone") {
+    mode = options.mode;
+  } else {
+    mode = hasOL ? "openlayers" : "standalone";
+  }
 
   console.log(`[Bootstrap] Mode: ${mode} (OpenLayers ${hasOL ? "available" : "not available"}`);
 
@@ -190,8 +196,7 @@ export async function bootstrapAuto(
     return {
       renderer,
       controller: null,
-      mode: "openlayers",
-      initMode: mode,
+      initMode: "openlayers",
     };
   }
 }

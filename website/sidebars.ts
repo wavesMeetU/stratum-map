@@ -6,6 +6,7 @@ const sidebars: SidebarsConfig = {
     "installation",
     "quick-start",
     "openlayers-integration",
+    "global-cell-towers",
     "text-rendering",
     "label-decluttering",
     "gpu-picking",
