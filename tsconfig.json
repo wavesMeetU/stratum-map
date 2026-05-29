@@ -17,5 +17,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/camera.ts", "src/camera/native-camera.ts", "src/minimal-bootstrap.ts"]
 }
