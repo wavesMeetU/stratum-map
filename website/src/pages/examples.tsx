@@ -6,6 +6,12 @@ import styles from "./examples.module.css";
 
 const examples = [
   {
+    title: "Global Cell Towers",
+    text: "5.1M cell towers worldwide rendered with WebGPU. Custom binary format, Cloudflare R2 delivery, GPU-native architecture with zero GeoJSON overhead.",
+    badges: ["Featured", "WebGPU", "Binary Streaming", "Massive Datasets", "Cloudflare R2"],
+    action: { label: "Live demo", to: "/examples/towers" },
+  },
+  {
     title: "Large point pan / zoom (hosted)",
     text: "OpenLayers OSM + WebGPU instanced points, FPS meter, 50k–2M points, color and size controls.",
     action: { label: "Open live demo", to: "/demo" },
@@ -19,11 +25,6 @@ const examples = [
     title: "GPU text labels (hosted)",
     text: "Coordinate strings over in-view points: bitmap vs MSDF atlas, optional declutter and collision debug overlay.",
     action: { label: "Live labels demo", to: "/examples/text" },
-  },
-  {
-    title: "Global Cell Towers",
-    text: "5.1M cell towers worldwide (OpenCellID) with WebGPU rendering, radio-type styling, zoom-dependent LOD, GPU picking, and hover popover.",
-    action: { label: "Run locally", href: "https://github.com/wavesMeetU/stratum-map/tree/main/examples/global-cell-towers" },
   },
   {
     title: "Decluttering",
@@ -53,6 +54,13 @@ export default function Examples(): ReactNode {
             <article key={ex.title} className={styles.card}>
               <div className={styles.placeholder}>Screenshot placeholder</div>
               <div className={styles.body}>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+                  {ex.badges?.map((badge) => (
+                    <span key={badge} className="badge badge--secondary" style={{ fontSize: "11px" }}>
+                      {badge}
+                    </span>
+                  ))}
+                </div>
                 <Heading as="h3">{ex.title}</Heading>
                 <p>{ex.text}</p>
                 <p style={{ marginTop: "0.75rem", marginBottom: 0 }}>

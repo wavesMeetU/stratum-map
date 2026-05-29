@@ -90,6 +90,7 @@ const config: Config = {
           label: "Demos",
           position: "left",
           items: [
+            { label: "Global Cell Towers", to: "/examples/towers" },
             { label: "Live demo", to: "/demo" },
             { label: "Examples hub", to: "/examples" },
             { label: "GPU picking", to: "/examples/picking" },
