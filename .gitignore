@@ -1,14 +1,33 @@
 node_modules/
 dist/
 dist-bench/
+dist-demo/
 playwright-report/
 test-results/
 *.tsbuildinfo
 stratum-map-*.tgz
 
-dist-demo/
-mcp/stratum-map-mcp/dist/
-.cursor/**
-!.cursor/rules/
-!.cursor/rules/no-cursor-commit-branding.mdc
-!.cursor/mcp.json
+# Data files
+cell_tower.json
+cell_towers.csv
+*.csv
+*.json
+
+# Local config
+*.local.json
+.claude/cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+*.log
+*.tgz

@@ -21,6 +21,11 @@ const examples = [
     action: { label: "Live labels demo", to: "/examples/text" },
   },
   {
+    title: "Global Cell Towers",
+    text: "5.1M cell towers worldwide (OpenCellID) with WebGPU rendering, radio-type styling, zoom-dependent LOD, GPU picking, and hover popover.",
+    action: { label: "Run locally", href: "https://github.com/wavesMeetU/stratum-map/tree/main/examples/global-cell-towers" },
+  },
+  {
     title: "Decluttering",
     text: "Priority-aware screen-space collision; optional debug overlay of accepted vs rejected boxes.",
     action: { label: "Declutter guide", to: "/docs/label-decluttering" },
