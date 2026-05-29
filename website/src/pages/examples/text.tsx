@@ -5,7 +5,7 @@ import Layout from "@theme/Layout";
 export default function TextLabelsDemoPage(): ReactNode {
   const src = useBaseUrl("/demos/text/index.html");
   return (
-    <Layout title="GPU text labels demo" description="WebGPU glyph labels with bitmap or MSDF atlas and declutter">
+    <Layout title="GPU text labels demo" description="WebGPU glyph labels with bitmap or MSDF atlas and declutter" noSidebar>
       <iframe
         title="stratum-map GPU text labels demo"
         src={src}

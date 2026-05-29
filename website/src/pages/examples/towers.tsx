@@ -5,7 +5,7 @@ import Layout from "@theme/Layout";
 export default function TowersDemoPage(): ReactNode {
   const src = useBaseUrl("/demos/towers/index.html");
   return (
-    <Layout title="Global Cell Towers" description="5.1M cell towers worldwide rendered with WebGPU">
+    <Layout title="Global Cell Towers" description="5.1M cell towers worldwide rendered with WebGPU" noSidebar>
       <iframe
         title="Global Cell Towers - WebGPU Demo"
         src={src}

@@ -5,7 +5,7 @@ import Layout from "@theme/Layout";
 export default function PickingDemoPage(): ReactNode {
   const src = useBaseUrl("/demos/picking/index.html");
   return (
-    <Layout title="GPU picking demo" description="Click map to pick points via GPU id buffer">
+    <Layout title="GPU picking demo" description="Click map to pick points via GPU id buffer" noSidebar>
       <iframe
         title="stratum-map GPU picking demo"
         src={src}
