@@ -6,7 +6,8 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 stratum-map-*.tgz
-
+.claude/
+CLAUDE.md
 # Data files
 cell_tower.json
 cell_towers.csv
