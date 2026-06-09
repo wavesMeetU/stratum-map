@@ -13,13 +13,11 @@
  * - Use callbacks for frame timing
  */
 
-import { WebGpuPointsRenderer } from '../../dist/renderer/webgpu-points-renderer.js';
-import { MapController, type RenderMode } from '../../dist/map-controller.js';
-import { ViewState } from '../../dist/core/view-state.js';
-import { OpenLayersFrameStateAdapter } from '../../dist/core/openlayers-adapter.js';
+import { WebGpuPointsRenderer, MapController, ViewState, type RenderMode } from '../../src/index.js';
 
-// Track current mode
+// Track current mode and shared controller
 let currentMode: RenderMode = 'openlayers';
+let sharedController: MapController | null = null;
 
 /**
  * Generate sample point data
@@ -54,7 +52,7 @@ function generateSamplePoints(count: number): { positions: Float32Array; feature
  * In this mode, MapController delegates frame timing to OpenLayers.
  * The renderer is updated in OpenLayers' postrender event.
  */
-async function exampleOpenLayersMode() {
+async function exampleOpenLayersMode(): Promise<MapController> {
   console.log('=== OpenLayers-managed Rendering Example ===');
 
   // Check WebGPU support
@@ -71,7 +69,10 @@ async function exampleOpenLayersMode() {
 
   // Generate sample data
   const { positions, featureIds, styleIds } = generateSamplePoints(10000);
-  renderer.setGeometry({ positions, styleIds, featureIds });
+  renderer.setGeometry({
+    buffer: { positions, featureIds, styleIds },
+    vertexCount: 10000
+  });
 
   // Create MapController in OpenLayers mode
   const controller = new MapController({
@@ -85,7 +86,7 @@ async function exampleOpenLayersMode() {
   // Resize handler for OpenLayers mode
   const resizeObserver = new ResizeObserver(() => {
     const { width, height } = container.getBoundingClientRect();
-    renderer.resizeToDisplaySize();
+    controller.handleResize(width, height);
   });
   resizeObserver.observe(container);
 
@@ -101,6 +102,7 @@ async function exampleOpenLayersMode() {
 
   currentMode = 'openlayers';
   console.log('Mode: OpenLayers-managed');
+  return controller;
 }
 
 /**
@@ -109,7 +111,7 @@ async function exampleOpenLayersMode() {
  * In this mode, MapController owns the render loop and uses requestAnimationFrame.
  * ViewState is managed directly, with full control over view updates.
  */
-async function exampleStandaloneMode() {
+async function exampleStandaloneMode(): Promise<MapController> {
   console.log('=== Standalone Rendering Example ===');
 
   // Check WebGPU support
@@ -126,7 +128,10 @@ async function exampleStandaloneMode() {
 
   // Generate sample data
   const { positions, featureIds, styleIds } = generateSamplePoints(10000);
-  renderer.setGeometry({ positions, styleIds, featureIds });
+  renderer.setGeometry({
+    buffer: { positions, featureIds, styleIds },
+    vertexCount: 10000
+  });
 
   // Initial ViewState
   const initialViewState = new ViewState([0, 0], 10, 0, [800, 600]);
@@ -153,12 +158,17 @@ async function exampleStandaloneMode() {
 
   // Example: Pan periodically
   let angle = 0;
+  let lastX = 0;
+  let lastY = 0;
   setInterval(() => {
     angle += 0.01;
     const radius = 2000000;
     const x = Math.cos(angle) * radius;
     const y = Math.sin(angle) * radius;
-    controller.pan(x, y);
+    // pan() expects deltas, not absolute positions
+    controller.pan(x - lastX, y - lastY);
+    lastX = x;
+    lastY = y;
   }, 16);
 
   // Example: Zoom in/out periodically
@@ -177,6 +187,7 @@ async function exampleStandaloneMode() {
 
   currentMode = 'standalone';
   console.log('Mode: Standalone');
+  return controller;
 }
 
 /**
@@ -212,21 +223,20 @@ function exampleModeSwitching() {
   document.body.appendChild(toggleButton);
 
   let inOpenLayersMode = true;
-  let controller: MapController | null = null;
 
   toggleButton.addEventListener('click', async () => {
-    if (controller) {
+    if (sharedController) {
       // Switch mode
       if (inOpenLayersMode) {
         console.log('Switching to Standalone mode...');
-        controller.switchMode('standalone');
-        controller.startRenderLoop();
+        sharedController.switchMode('standalone');
+        sharedController.startRenderLoop();
         toggleButton.textContent = 'Switch to OpenLayers';
         inOpenLayersMode = false;
       } else {
         console.log('Switching to OpenLayers mode...');
-        controller.switchMode('openlayers');
-        controller.stopRenderLoop();
+        sharedController.switchMode('openlayers');
+        sharedController.stopRenderLoop();
         toggleButton.textContent = 'Switch to Standalone';
         inOpenLayersMode = true;
       }
@@ -234,8 +244,8 @@ function exampleModeSwitching() {
   });
 
   // Initialize in OpenLayers mode
-  exampleOpenLayersMode().then(() => {
-    controller = window.controller;
+  exampleOpenLayersMode().then((ctrl) => {
+    sharedController = ctrl;
   });
 }
 

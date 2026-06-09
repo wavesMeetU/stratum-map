@@ -23,6 +23,10 @@ export interface WebGpuPointsRendererOptions {
    * Caller owns the pool; renderer returns buffers here on destroy/evict when set.
    */
   readonly gpuBufferPool?: GpuBufferPool;
+  /** Use additive blending for glowing effects (default: false). */
+  readonly additiveBlending?: boolean;
+  /** Clear color for each frame (default: black). */
+  readonly clearColor?: { readonly r: number; readonly g: number; readonly b: number; readonly a: number };
 }
 
 /** Options for keyed chunk ingest / replace / tombstone (vertexCount 0 removes the key). */
@@ -53,9 +57,11 @@ export class WebGpuPointsRenderer {
   private readonly frameF32 = new Float32Array(this.frameUniformStaging, 0, 16);
   private readonly frameViewport = new Float32Array(this.frameUniformStaging, 64, 2);
   private readonly frameU32 = new Uint32Array(this.frameUniformStaging, 80, 4);
+  private readonly frameLodStride = new Float32Array(this.frameUniformStaging, 96, 1);
 
   private positionBuffer: GPUBuffer | null = null;
   private styleIdBuffer: GPUBuffer | null = null;
+  private instanceIndexBuffer: GPUBuffer | null = null;
   private featureIdBuffer: GPUBuffer | null = null;
   private capacityVertices = 0;
   private vertexCount = 0;
@@ -69,6 +75,13 @@ export class WebGpuPointsRenderer {
   private pickTexW = 0;
   private pickTexH = 0;
   private pickPointDiameterPx = 8;
+
+  /**
+   * Serialization guard for concurrent pick operations.
+   * Only one pick operation may be in-flight at a time to prevent
+   * readbackBuffer.mapAsync() conflicts (PICK-001).
+   */
+  private pendingPickPromise: Promise<null | number> | null = null;
 
   /**
    * Internal ViewState used as single source of truth for clip matrix generation.
@@ -93,6 +106,7 @@ export class WebGpuPointsRenderer {
   private styles: PointStyle[] = [];
 
   private alphaMode: GPUCanvasAlphaMode = "premultiplied";
+  private readonly clearColor: { r: number; g: number; b: number; a: number };
   private geometryLayout: "single" | "chunks" = "single";
   private readonly chunkedChunks = new Map<string, GpuPointChunkSlot>();
   /** Stable draw order (first draw wins for overlaps). */
@@ -113,6 +127,7 @@ export class WebGpuPointsRenderer {
     bindGroup: GPUBindGroup,
     quadVertexBuffer: GPUBuffer,
     initialStyles: readonly PointStyle[],
+    clearColor: { r: number; g: number; b: number; a: number },
   ) {
     this.canvas = canvas;
     this.context = context;
@@ -123,11 +138,12 @@ export class WebGpuPointsRenderer {
     this.styleStorageBuffer = styleStorageBuffer;
     this.bindGroup = bindGroup;
     this.quadVertexBuffer = quadVertexBuffer;
+    this.clearColor = clearColor;
     this.setStyleTable(initialStyles.length > 0 ? initialStyles : [DEFAULT_POINT_STYLE]);
   }
 
   static async create(options: WebGpuPointsRendererOptions): Promise<WebGpuPointsRenderer> {
-    const { canvas, alphaMode = "premultiplied" } = options;
+    const { canvas, alphaMode = "premultiplied", additiveBlending = false, clearColor = { r: 0, g: 0, b: 0, a: 0 } } = options;
     const context = canvas.getContext("webgpu");
     if (!context) {
       throw new Error("WebGPU not available (no GPUCanvasContext)");
@@ -146,7 +162,7 @@ export class WebGpuPointsRenderer {
       }));
 
     const format = navigator.gpu.getPreferredCanvasFormat();
-    const pipeline = WebGpuPointsRenderer.createPipeline(device, format);
+    const pipeline = WebGpuPointsRenderer.createPipeline(device, format, additiveBlending);
 
     const quadCorners = new Float32Array([
       -1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1,
@@ -186,6 +202,7 @@ export class WebGpuPointsRenderer {
       bindGroup,
       quadVertexBuffer,
       options.styles ?? [DEFAULT_POINT_STYLE],
+      clearColor,
     );
 
     renderer.alphaMode = alphaMode;
@@ -194,7 +211,7 @@ export class WebGpuPointsRenderer {
     return renderer;
   }
 
-  private static createPipeline(device: GPUDevice, format: GPUTextureFormat): GPURenderPipeline {
+  private static createPipeline(device: GPUDevice, format: GPUTextureFormat, additiveBlending: boolean): GPURenderPipeline {
     const module = device.createShaderModule({ code: POINTS_WGSL });
     return device.createRenderPipeline({
       layout: "auto",
@@ -217,6 +234,11 @@ export class WebGpuPointsRenderer {
             stepMode: "instance",
             attributes: [{ shaderLocation: 2, offset: 0, format: "uint16" }],
           },
+          {
+            arrayStride: 4,
+            stepMode: "instance",
+            attributes: [{ shaderLocation: 3, offset: 0, format: "uint32" }],
+          },
         ],
       },
       fragment: {
@@ -225,18 +247,31 @@ export class WebGpuPointsRenderer {
         targets: [
           {
             format,
-            blend: {
-              color: {
-                srcFactor: "src-alpha",
-                dstFactor: "one-minus-src-alpha",
-                operation: "add",
-              },
-              alpha: {
-                srcFactor: "one",
-                dstFactor: "one-minus-src-alpha",
-                operation: "add",
-              },
-            },
+            blend: additiveBlending
+              ? {
+                  color: {
+                    srcFactor: "src-alpha",
+                    dstFactor: "one",
+                    operation: "add",
+                  },
+                  alpha: {
+                    srcFactor: "one",
+                    dstFactor: "one-minus-src-alpha",
+                    operation: "add",
+                  },
+                }
+              : {
+                  color: {
+                    srcFactor: "src-alpha",
+                    dstFactor: "one-minus-src-alpha",
+                    operation: "add",
+                  },
+                  alpha: {
+                    srcFactor: "one",
+                    dstFactor: "one-minus-src-alpha",
+                    operation: "add",
+                  },
+                },
           },
         ],
       },
@@ -299,12 +334,14 @@ export class WebGpuPointsRenderer {
         pass.setVertexBuffer(0, this.quadVertexBuffer, 0, 6 * 8);
         pass.setVertexBuffer(1, chunk.positionBuffer, 0, chunk.vertexCount * 8);
         pass.setVertexBuffer(2, chunk.styleIdBuffer, 0, chunk.vertexCount * 4);
+        // Note: LOD not supported for chunked layout, set stride to 1
         pass.draw(6, chunk.vertexCount, 0, 0);
       }
-    } else if (this.vertexCount > 0 && this.positionBuffer && this.styleIdBuffer) {
+    } else if (this.vertexCount > 0 && this.positionBuffer && this.styleIdBuffer && this.instanceIndexBuffer) {
       pass.setVertexBuffer(0, this.quadVertexBuffer, 0, 6 * 8);
       pass.setVertexBuffer(1, this.positionBuffer, 0, this.vertexCount * 8);
       pass.setVertexBuffer(2, this.styleIdBuffer, 0, this.vertexCount * 4);
+      pass.setVertexBuffer(3, this.instanceIndexBuffer, 0, this.vertexCount * 4);
       pass.draw(6, this.vertexCount, 0, 0);
     }
 
@@ -476,6 +513,23 @@ export class WebGpuPointsRenderer {
    * `x`/`y` are **backing-store** pixels (same as `canvas.width` / `canvas.height`).
    */
   async pickFeatureIdAtCanvasPixel(x: number, y: number): Promise<number | null> {
+    // Serialize concurrent pick operations to prevent readbackBuffer.mapAsync() conflicts (PICK-001)
+    // Wait for any in-flight pick operation to complete before starting a new one
+    await this.pendingPickPromise;
+
+    // Create the pick operation
+    const pickOperation = this.performPickOperation(x, y);
+    this.pendingPickPromise = pickOperation;
+
+    try {
+      return await pickOperation;
+    } finally {
+      // Clear the pending state once complete
+      this.pendingPickPromise = null;
+    }
+  }
+
+  private async performPickOperation(x: number, y: number): Promise<number | null> {
     const w = this.canvas.width;
     const h = this.canvas.height;
     if (w <= 0 || h <= 0) return null;
@@ -642,6 +696,20 @@ export class WebGpuPointsRenderer {
     this.device.queue.writeBuffer(this.styleStorageBuffer, 0, f32.buffer, 0, this.styles.length * 32);
   }
 
+  /**
+   * Set LOD stride for density-based rendering.
+   * Higher values show fewer points (lower density), useful at low zoom levels.
+   * Set to 1.0 to show all points (no LOD).
+   *
+   * @param stride - LOD stride (1.0 = all points, 2.0 = every 2nd point, etc.)
+   */
+  setLodStride(stride: number): void {
+    if (stride < 1.0) {
+      throw new Error("LOD stride must be >= 1.0");
+    }
+    this.frameLodStride[0] = stride;
+  }
+
   /** @inheritdoc */
   setGeometry(view: GeometryBufferView): void {
     if (this.geometryLayout !== "single") {
@@ -727,7 +795,7 @@ export class WebGpuPointsRenderer {
   }
 
   private ensureVertexCapacity(n: number): void {
-    if (n <= this.capacityVertices && this.positionBuffer && this.styleIdBuffer && this.featureIdBuffer) {
+    if (n <= this.capacityVertices && this.positionBuffer && this.styleIdBuffer && this.featureIdBuffer && this.instanceIndexBuffer) {
       return;
     }
     const newCap = Math.max(
@@ -738,6 +806,7 @@ export class WebGpuPointsRenderer {
     const posBytes = newCap * 8;
     const styleBytes = newCap * 4;
     const featBytes = newCap * 4;
+    const instanceIndexBytes = newCap * 4;
 
     const pool = this.gpuBufferPool;
     const dispose = (b: GPUBuffer | null | undefined) => {
@@ -754,6 +823,7 @@ export class WebGpuPointsRenderer {
     dispose(this.positionBuffer);
     dispose(this.styleIdBuffer);
     dispose(this.featureIdBuffer);
+    dispose(this.instanceIndexBuffer);
 
     const alloc = (minBytes: number): GPUBuffer =>
       pool !== null
@@ -766,6 +836,14 @@ export class WebGpuPointsRenderer {
     this.positionBuffer = alloc(posBytes);
     this.styleIdBuffer = alloc(styleBytes);
     this.featureIdBuffer = alloc(featBytes);
+    this.instanceIndexBuffer = alloc(instanceIndexBytes);
+
+    // Fill instance index buffer with sequential indices
+    const instanceIndices = new Uint32Array(newCap);
+    for (let i = 0; i < newCap; i++) {
+      instanceIndices[i] = i;
+    }
+    this.device.queue.writeBuffer(this.instanceIndexBuffer, 0, instanceIndices.buffer, 0, instanceIndexBytes);
     this.capacityVertices = newCap;
   }
 
@@ -790,7 +868,7 @@ export class WebGpuPointsRenderer {
       colorAttachments: [
         {
           view: textureView,
-          clearValue: { r: 0, g: 0, b: 0, a: 0 },
+          clearValue: this.clearColor,
           loadOp: "clear",
           storeOp: "store",
         },
@@ -825,6 +903,7 @@ export class WebGpuPointsRenderer {
     this.positionBuffer?.destroy();
     this.styleIdBuffer?.destroy();
     this.featureIdBuffer?.destroy();
+    this.instanceIndexBuffer?.destroy();
     this.pickTexture?.destroy();
     this.readbackBuffer?.destroy();
     this.pickUniformBuffer?.destroy();

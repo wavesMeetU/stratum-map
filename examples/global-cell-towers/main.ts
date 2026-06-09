@@ -7,20 +7,21 @@ const BINARY_MAGIC = 0x53524f42;
 const META_RECORD_SIZE = 12;
 const RADIO_NAMES = ["NR", "LTE", "UMTS", "GSM"] as const;
 
-// NR=cyan, LTE=green, UMTS=orange, GSM=red — lower alpha for additive density buildup
+// Radio type styling: NR=blue, LTE=green, UMTS=orange, GSM=brown
+// Full opacity (alpha=1.0) for consistent visibility across all types
 const BASE_STYLES = [
-  { color: [0.0, 0.88, 1.0, 0.45] as const, sizePx: 5, glow: 1.0 },   // NR (5G) cyan
-  { color: [0.15, 1.0, 0.08, 0.35] as const, sizePx: 4, glow: 1.0 },   // LTE (4G) green
-  { color: [1.0, 0.53, 0.0, 0.35] as const,  sizePx: 3.5, glow: 1 }, // UMTS (3G) orange
-  { color: [1.0, 0.1, 0.24, 0.30] as const,  sizePx: 3, glow: 1.5 },   // GSM (2G) red
+  { color: [0.20, 0.60, 1.00, 1.00] as const, sizePx: 6.0, glow: 1.0 }, // NR (5G)
+  { color: [0.00, 0.80, 0.40, 1.00] as const, sizePx: 5.0, glow: 0.9 }, // LTE (4G)
+  { color: [1.00, 0.60, 0.00, 1.00] as const, sizePx: 4.5, glow: 0.8 }, // UMTS (3G)
+  { color: [0.75, 0.35, 0.15, 1.00] as const, sizePx: 4.0, glow: 0.7 }, // GSM (2G)
 ];
 
-// Dark atmospheric clear color for the canvas
-const CLEAR_COLOR = { r: 0.008, g: 0.014, b: 0.035, a: 1.0 };
+// Cinematic dark atmospheric background for telecom visualization
+const CLEAR_COLOR = { r: 0.006, g: 0.008, b: 0.018, a: 1.0 };
 
-// EPSG:3857 center ≈ lon 20°, lat 15°
-const INITIAL_CENTER: [number, number] = [2226389.82, 1678043.34];
-const INITIAL_ZOOM = 2.5;
+// EPSG:3857 center ≈ lon 10°, lat 52° (Europe - where all radio types are present)
+const INITIAL_CENTER: [number, number] = [1113194.90, 6800123.75];
+const INITIAL_ZOOM = 3.0;
 
 // ── types ──────────────────────────────────────────────────────
 
@@ -128,11 +129,12 @@ function buildStyleTable(styleVisible: boolean[], zoom: number): typeof BASE_STY
 
 function lodStrideForZoom(zoom: number): number {
   if (zoom >= 6) return 1;      // all towers
-  if (zoom >= 4.5) return 2;    // 50%
-  if (zoom >= 3.5) return 4;    // 25%
-  if (zoom >= 2.5) return 8;    // 12.5%
-  if (zoom >= 1.5) return 20;   // 5%
-  return 40;                    // 2.5% at world view
+  if (zoom >= 5) return 2;      // 50%
+  if (zoom >= 4) return 4;      // 25%
+  if (zoom >= 3) return 8;      // 12.5%
+  if (zoom >= 2) return 16;     // 6.25%
+  if (zoom >= 1) return 32;     // 3.125%
+  return 64;                    // 1.56% at world view
 }
 
 // ── main ───────────────────────────────────────────────────────
@@ -179,8 +181,9 @@ function main(): void {
 
   function updateStyles(): void {
     if (!renderer) return;
-    renderer.setStyleTable(buildStyleTable(styleVisible, viewState.zoom));
-    renderer.setLodStride(lodStrideForZoom(viewState.zoom));
+    const styleTable = buildStyleTable(styleVisible, viewState.zoom);
+    renderer.setStyleTable(styleTable);
+    renderer.setLodStride(1); // LOD DISABLED - stride forced to 1
     dirty = true;
   }
 
@@ -203,7 +206,8 @@ function main(): void {
     try {
       renderer = await WebGpuPointsRenderer.create({
         canvas,
-        additiveBlending: true,
+        additiveBlending: true,  // Enable additive blending for glowing effect
+        alphaMode: "premultiplied",
         clearColor: CLEAR_COLOR,
       });
     } catch (e) {
@@ -215,7 +219,7 @@ function main(): void {
     renderer.setPickPointDiameterPx(20);
 
     // resize canvas
-    const dpr = devicePixelRatio ?? 1;
+    const dpr = window.devicePixelRatio ?? 1;
     canvas.width = canvas.clientWidth * dpr;
     canvas.height = canvas.clientHeight * dpr;
     renderer.resizeBackingStore(canvas.width, canvas.height);
@@ -277,7 +281,7 @@ function main(): void {
     // ── resize ──
 
     const ro = new ResizeObserver(() => {
-      const dpr = devicePixelRatio ?? 1;
+      const dpr = window.devicePixelRatio ?? 1;
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
       renderer.resizeBackingStore(canvas.width, canvas.height);
