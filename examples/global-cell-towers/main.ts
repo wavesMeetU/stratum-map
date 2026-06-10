@@ -162,9 +162,11 @@ function main(): void {
   let lastX = 0;
   let lastY = 0;
 
-  // FPS
+  // FPS - Track rendered frames over rolling 1-second window
   let frameCount = 0;
-  let lastFpsTime = performance.now();
+  let lastFpsTime = 0;
+  const frameTimestamps: number[] = [];
+  const FPS_WINDOW_MS = 1000;
 
   // ── benchmark mode ──
 
@@ -421,62 +423,76 @@ function main(): void {
       // Benchmark mode: render every frame, ignore dirty flag
       // Normal mode: only render when dirty (user interaction)
       if (benchmarkMode || dirty) {
-        const frameStart = performance.now();
-        renderer.renderWithViewState(viewState, { timeMs: timestamp });
-        const frameEnd = performance.now();
-
-        const cpuRenderTime = frameEnd - frameStart;
         const now = performance.now();
+        renderer.renderWithViewState(viewState, { timeMs: timestamp });
 
+        // Track rendered frames for production FPS
         frameCount++;
+        frameTimestamps.push(now);
 
-        // Update FPS every 1000ms
-        if (now - lastFpsTime >= 1000) {
-          const elapsed = now - lastFpsTime;
-          const fps = (frameCount * 1000) / elapsed;
+        // Remove timestamps older than 1 second
+        while (frameTimestamps.length > 0 && frameTimestamps[0]! <= now - FPS_WINDOW_MS) {
+          frameTimestamps.shift();
+        }
+
+        // Update FPS display
+        if (now - lastFpsTime >= 200) {
+          let fps = 0;
+          if (frameTimestamps.length >= 2) {
+            const oldest = frameTimestamps[0]!;
+            const newest = frameTimestamps[frameTimestamps.length - 1]!;
+            const elapsed = newest - oldest;
+            fps = elapsed > 0 ? ((frameTimestamps.length - 1) * 1000) / elapsed : 0;
+          }
           fpsEl.textContent = Math.round(fps).toString();
+          lastFpsTime = now;
+        }
 
-          // In benchmark mode, track statistics
-          if (benchmarkMode) {
-            benchmarkStats.fpsHistory.push(fps);
-            benchmarkStats.frameTimeHistory.push(elapsed / frameCount);
-            benchmarkStats.cpuRenderTimeHistory.push(cpuRenderTime);
+        // Benchmark mode: track statistics separately
+        if (benchmarkMode) {
+          // For benchmark mode, use the production FPS
+          let benchmarkFps = 0;
+          if (frameTimestamps.length >= 2) {
+            const oldest = frameTimestamps[0]!;
+            const newest = frameTimestamps[frameTimestamps.length - 1]!;
+            const elapsed = newest - oldest;
+            benchmarkFps = elapsed > 0 ? ((frameTimestamps.length - 1) * 1000) / elapsed : 0;
+          }
+          benchmarkStats.fpsHistory.push(benchmarkFps);
+          benchmarkStats.frameTimeHistory.push(now - lastFpsTime);
+          benchmarkStats.cpuRenderTimeHistory.push(0); // Not measured in production mode
 
-            // Keep only last 5 seconds of history
-            if (benchmarkStats.fpsHistory.length > 5) {
-              benchmarkStats.fpsHistory.shift();
-              benchmarkStats.frameTimeHistory.shift();
-              benchmarkStats.cpuRenderTimeHistory.shift();
-            }
-
-            updateBenchmarkPanel();
-
-            // Log benchmark results every 10 seconds
-            const benchmarkElapsed = now - benchmarkStats.benchmarkStartTime;
-            if (benchmarkElapsed >= 10000) {
-              const avgFps = benchmarkStats.fpsHistory.reduce((a, b) => a + b, 0) / benchmarkStats.fpsHistory.length;
-              const avgFrameTime = benchmarkStats.frameTimeHistory.reduce((a, b) => a + b, 0) / benchmarkStats.frameTimeHistory.length;
-
-              benchmarkStats.benchmarkResults.push({
-                stride: benchmarkStats.currentLodStride,
-                avgFps,
-                avgFrameTime,
-              });
-
-              console.log(
-                `📊 Stride ${benchmarkStats.currentLodStride}: ${avgFps.toFixed(1)} FPS, ${avgFrameTime.toFixed(2)} ms frame time`
-              );
-
-              // Reset for next test
-              benchmarkStats.fpsHistory = [];
-              benchmarkStats.frameTimeHistory = [];
-              benchmarkStats.cpuRenderTimeHistory = [];
-              benchmarkStats.benchmarkStartTime = now;
-            }
+          // Keep only last 5 seconds of history
+          if (benchmarkStats.fpsHistory.length > 5) {
+            benchmarkStats.fpsHistory.shift();
+            benchmarkStats.frameTimeHistory.shift();
+            benchmarkStats.cpuRenderTimeHistory.shift();
           }
 
-          frameCount = 0;
-          lastFpsTime = now;
+          updateBenchmarkPanel();
+
+          // Log benchmark results every 10 seconds
+          const benchmarkElapsed = now - benchmarkStats.benchmarkStartTime;
+          if (benchmarkElapsed >= 10000) {
+            const avgFps = benchmarkStats.fpsHistory.reduce((a, b) => a + b, 0) / benchmarkStats.fpsHistory.length;
+            const avgFrameTime = benchmarkStats.frameTimeHistory.reduce((a, b) => a + b, 0) / benchmarkStats.frameTimeHistory.length;
+
+            benchmarkStats.benchmarkResults.push({
+              stride: benchmarkStats.currentLodStride,
+              avgFps,
+              avgFrameTime,
+            });
+
+            console.log(
+              `📊 Stride ${benchmarkStats.currentLodStride}: ${avgFps.toFixed(1)} FPS, ${avgFrameTime.toFixed(2)} ms frame time`
+            );
+
+            // Reset for next test
+            benchmarkStats.fpsHistory = [];
+            benchmarkStats.frameTimeHistory = [];
+            benchmarkStats.cpuRenderTimeHistory = [];
+            benchmarkStats.benchmarkStartTime = now;
+          }
         }
 
         dirty = false;
