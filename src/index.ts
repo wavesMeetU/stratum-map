@@ -43,6 +43,7 @@ export {
 export type {
   IngestTransferredWorkerChunkOptions,
   WebGpuPointsRendererOptions,
+  RendererStats,
 } from "./renderer/webgpu-points-renderer.js";
 export { alignTo4Bytes } from "./gpu/byte-align.js";
 export { bucketByteSizeCeil } from "./gpu/buffer-bucket.js";

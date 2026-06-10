@@ -166,6 +166,159 @@ function main(): void {
   let frameCount = 0;
   let lastFpsTime = performance.now();
 
+  // ── benchmark mode ──
+
+  let benchmarkMode = false;
+  let benchmarkStats = {
+    fpsHistory: [] as number[],
+    frameTimeHistory: [] as number[],
+    cpuRenderTimeHistory: [] as number[],
+    currentLodStride: 1,
+    benchmarkStartTime: 0,
+    benchmarkResults: [] as { stride: number; avgFps: number; avgFrameTime: number }[],
+  };
+
+  function createBenchmarkPanel(): void {
+    const panel = document.createElement("div");
+    panel.id = "benchmark-panel";
+    panel.style.cssText = `
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      background: rgba(2, 8, 18, 0.95);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 4px;
+      backdrop-filter: blur(12px);
+      padding: 12px;
+      font: 11px/1.5 system-ui, -apple-system, sans-serif;
+      color: #b4c1d8;
+      min-width: 220px;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    `;
+
+    document.body.appendChild(panel);
+  }
+
+  function updateBenchmarkPanel(): void {
+    const panel = document.getElementById("benchmark-panel")!;
+    if (!panel || !renderer) return;
+
+    const stats = renderer.getStats();
+    const currentFps = benchmarkStats.fpsHistory.length > 0
+      ? benchmarkStats.fpsHistory[benchmarkStats.fpsHistory.length - 1]
+      : 0;
+    const avgFps = benchmarkStats.fpsHistory.length > 0
+      ? benchmarkStats.fpsHistory.reduce((a, b) => a + b, 0) / benchmarkStats.fpsHistory.length
+      : 0;
+    const avgFrameTime = benchmarkStats.frameTimeHistory.length > 0
+      ? benchmarkStats.frameTimeHistory.reduce((a, b) => a + b, 0) / benchmarkStats.frameTimeHistory.length
+      : 0;
+    const avgCpuTime = benchmarkStats.cpuRenderTimeHistory.length > 0
+      ? benchmarkStats.cpuRenderTimeHistory.reduce((a, b) => a + b, 0) / benchmarkStats.cpuRenderTimeHistory.length
+      : 0;
+
+    panel.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-weight: 600; color: #00d5ff;">BENCHMARK MODE</span>
+        <span style="font-size: 9px; background: rgba(0, 229, 255, 0.15); color: #00d5ff; padding: 2px 6px; border-radius: 3px;">ACTIVE</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">FPS:</span>
+        <span style="font-variant-numeric: tabular-nums; font-weight: 500;">${currentFps.toFixed(1)}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">Avg FPS (5s):</span>
+        <span style="font-variant-numeric: tabular-nums;">${avgFps.toFixed(1)}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">Frame Time:</span>
+        <span style="font-variant-numeric: tabular-nums;">${avgFrameTime.toFixed(2)} ms</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">CPU Render:</span>
+        <span style="font-variant-numeric: tabular-nums;">${avgCpuTime.toFixed(2)} ms</span>
+      </div>
+      <div style="height: 1px; background: rgba(80, 120, 200, 0.12); margin: 8px 0;"></div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">Total Dataset:</span>
+        <span style="font-variant-numeric: tabular-nums;">${stats.totalInstances.toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">Visible:</span>
+        <span style="font-variant-numeric: tabular-nums; color: #00d5ff;">${stats.visibleInstances.toLocaleString()}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">LOD Stride:</span>
+        <span style="font-variant-numeric: tabular-nums;">${stats.lodStride}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">Draw Calls:</span>
+        <span style="font-variant-numeric: tabular-nums;">${stats.drawCalls}</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: #6a7a8e;">Chunks:</span>
+        <span style="font-variant-numeric: tabular-nums;">${stats.chunkCount}</span>
+      </div>
+      <div style="height: 1px; background: rgba(80, 120, 200, 0.12); margin: 8px 0;"></div>
+      <div style="font-size: 10px; color: #6a7a8e;">
+        Press 1-4: Change LOD stride<br>
+        Press B: Toggle benchmark mode
+      </div>
+    `;
+  }
+
+  function toggleBenchmarkMode(): void {
+    benchmarkMode = !benchmarkMode;
+    const panel = document.getElementById("benchmark-panel")!;
+    if (benchmarkMode) {
+      panel.style.display = "block";
+      benchmarkStats.fpsHistory = [];
+      benchmarkStats.frameTimeHistory = [];
+      benchmarkStats.cpuRenderTimeHistory = [];
+      benchmarkStats.benchmarkStartTime = performance.now();
+      console.log("🔧 BENCHMARK MODE ENABLED");
+    } else {
+      panel.style.display = "none";
+      logBenchmarkSummary();
+    }
+  }
+
+  function setBenchmarkLodStride(stride: number): void {
+    if (!renderer) return;
+    benchmarkStats.currentLodStride = stride;
+    renderer.setLodStride(stride);
+    updateBenchmarkPanel();
+    console.log(`🔧 LOD stride set to ${stride}`);
+  }
+
+  function logBenchmarkSummary(): void {
+    if (benchmarkStats.benchmarkResults.length === 0) {
+      console.log("📊 No benchmark results collected");
+      return;
+    }
+
+    console.log("\n📊 BENCHMARK SUMMARY");
+    console.log("═".repeat(60));
+    console.log("│ Stride │ Visible Instances │ Avg FPS │ Avg Frame Time │");
+    console.log("────────┼──────────────────┼─────────┼─────────────────");
+
+    for (const result of benchmarkStats.benchmarkResults) {
+      const visible = Math.floor(5181123 / result.stride);
+      console.log(
+        `│ ${result.stride.toString().padStart(6)} │ ${visible.toLocaleString().padStart(16)} │ ${result.avgFps.toFixed(1).padStart(7)} │ ${result.avgFrameTime.toFixed(2).padStart(15)} │`
+      );
+    }
+    console.log("═".repeat(60));
+
+    const firstResult = benchmarkStats.benchmarkResults[0];
+    const lastResult = benchmarkStats.benchmarkResults[benchmarkStats.benchmarkResults.length - 1];
+    const fpsImprovement = ((lastResult.avgFps - firstResult.avgFps) / firstResult.avgFps * 100).toFixed(1);
+
+    console.log(`\n📈 FPS Improvement: ${fpsImprovement}% (stride ${firstResult.stride} → ${lastResult.stride})`);
+  }
+
   // Hover state
   let hoverTimer: number | null = null;
   let lastHoverId: number | null = null;
@@ -183,7 +336,7 @@ function main(): void {
     if (!renderer) return;
     const styleTable = buildStyleTable(styleVisible, viewState.zoom);
     renderer.setStyleTable(styleTable);
-    renderer.setLodStride(1); // LOD DISABLED - stride forced to 1
+    renderer.setLodStride(benchmarkMode ? benchmarkStats.currentLodStride : 1);
     dirty = true;
   }
 
@@ -257,22 +410,76 @@ function main(): void {
     loadingEl.classList.add("fade-out");
     setTimeout(() => loadingEl.remove(), 400);
 
+    // Create benchmark panel (hidden by default)
+    createBenchmarkPanel();
+
     dirty = true;
 
     // ── render loop ──
 
     function renderLoop(timestamp: number): void {
-      if (dirty) {
+      // Benchmark mode: render every frame, ignore dirty flag
+      // Normal mode: only render when dirty (user interaction)
+      if (benchmarkMode || dirty) {
+        const frameStart = performance.now();
         renderer.renderWithViewState(viewState, { timeMs: timestamp });
-        dirty = false;
+        const frameEnd = performance.now();
+
+        const cpuRenderTime = frameEnd - frameStart;
+        const now = performance.now();
 
         frameCount++;
-        const now = performance.now();
+
+        // Update FPS every 1000ms
         if (now - lastFpsTime >= 1000) {
-          fpsEl.textContent = Math.round((frameCount * 1000) / (now - lastFpsTime)).toString();
+          const elapsed = now - lastFpsTime;
+          const fps = (frameCount * 1000) / elapsed;
+          fpsEl.textContent = Math.round(fps).toString();
+
+          // In benchmark mode, track statistics
+          if (benchmarkMode) {
+            benchmarkStats.fpsHistory.push(fps);
+            benchmarkStats.frameTimeHistory.push(elapsed / frameCount);
+            benchmarkStats.cpuRenderTimeHistory.push(cpuRenderTime);
+
+            // Keep only last 5 seconds of history
+            if (benchmarkStats.fpsHistory.length > 5) {
+              benchmarkStats.fpsHistory.shift();
+              benchmarkStats.frameTimeHistory.shift();
+              benchmarkStats.cpuRenderTimeHistory.shift();
+            }
+
+            updateBenchmarkPanel();
+
+            // Log benchmark results every 10 seconds
+            const benchmarkElapsed = now - benchmarkStats.benchmarkStartTime;
+            if (benchmarkElapsed >= 10000) {
+              const avgFps = benchmarkStats.fpsHistory.reduce((a, b) => a + b, 0) / benchmarkStats.fpsHistory.length;
+              const avgFrameTime = benchmarkStats.frameTimeHistory.reduce((a, b) => a + b, 0) / benchmarkStats.frameTimeHistory.length;
+
+              benchmarkStats.benchmarkResults.push({
+                stride: benchmarkStats.currentLodStride,
+                avgFps,
+                avgFrameTime,
+              });
+
+              console.log(
+                `📊 Stride ${benchmarkStats.currentLodStride}: ${avgFps.toFixed(1)} FPS, ${avgFrameTime.toFixed(2)} ms frame time`
+              );
+
+              // Reset for next test
+              benchmarkStats.fpsHistory = [];
+              benchmarkStats.frameTimeHistory = [];
+              benchmarkStats.cpuRenderTimeHistory = [];
+              benchmarkStats.benchmarkStartTime = now;
+            }
+          }
+
           frameCount = 0;
           lastFpsTime = now;
         }
+
+        dirty = false;
       }
       requestAnimationFrame(renderLoop);
     }
@@ -457,9 +664,34 @@ function main(): void {
       });
     });
 
-    // ── keyboard zoom ──
+    // ── keyboard shortcuts ──
 
     document.addEventListener("keydown", (e) => {
+      // Benchmark mode toggle
+      if (e.key === "b" || e.key === "B") {
+        toggleBenchmarkMode();
+        return;
+      }
+
+      // LOD stride control (in benchmark mode)
+      if (e.key === "1") {
+        setBenchmarkLodStride(1);
+        return;
+      }
+      if (e.key === "2") {
+        setBenchmarkLodStride(2);
+        return;
+      }
+      if (e.key === "3") {
+        setBenchmarkLodStride(4);
+        return;
+      }
+      if (e.key === "4") {
+        setBenchmarkLodStride(8);
+        return;
+      }
+
+      // Original zoom controls
       if (e.key === "+" || e.key === "=") {
         viewState = viewState.zoomBy(0.3);
         zoomEl.textContent = viewState.zoom.toFixed(2);
