@@ -10,6 +10,24 @@ import type { PointStyle } from "./point-style.js";
 import { DEFAULT_POINT_STYLE, MAX_POINT_STYLES } from "./point-style.js";
 import { FRAME_UNIFORM_BYTE_LENGTH, POINTS_WGSL } from "./points-wgsl.js";
 
+/**
+ * Renderer statistics interface for benchmarking and debugging.
+ */
+export interface RendererStats {
+  /** Total instances in the dataset */
+  totalInstances: number;
+  /** Estimated visible instances after LOD culling */
+  visibleInstances: number;
+  /** Number of active geometry chunks */
+  chunkCount: number;
+  /** Number of draw calls per frame */
+  drawCalls: number;
+  /** Current LOD stride (1 = all instances, 2 = every 2nd, etc.) */
+  lodStride: number;
+  /** Current geometry layout mode */
+  geometryLayout: "single" | "chunks";
+}
+
 export interface WebGpuPointsRendererOptions {
   readonly canvas: HTMLCanvasElement;
   /** Premultiplied alpha works better with HTML canvas compositing. */
@@ -464,6 +482,27 @@ export class WebGpuPointsRenderer {
 
   getChunkCount(): number {
     return this.chunkedChunks.size;
+  }
+
+  /**
+   * Get renderer statistics for benchmarking and debugging.
+   * Returns snapshot of current renderer state.
+   */
+  getStats(): RendererStats {
+    const totalInstances = this.vertexCount;
+    const lodStride = this.frameLodStride[0];
+    const visibleInstances = lodStride >= 1 ? Math.floor(totalInstances / lodStride) : totalInstances;
+    const chunkCount = this.chunkedChunks.size;
+    const drawCalls = this.geometryLayout === "chunks" ? this.chunkDrawOrder.length : (totalInstances > 0 ? 1 : 0);
+
+    return {
+      totalInstances,
+      visibleInstances,
+      chunkCount,
+      drawCalls,
+      lodStride,
+      geometryLayout: this.geometryLayout,
+    };
   }
 
   private touchChunkLru(key: string): void {
