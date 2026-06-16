@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Minimal Native - WebGPU</title>
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      overflow: hidden;
+    }
+    #canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    #info {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      background: rgba(0, 0, 0, 0.8);
+      color: #fff;
+      padding: 12px;
+      border-radius: 4px;
+      font: 12px system-ui;
+      pointer-events: none;
+    }
+    #info div {
+      margin: 4px 0;
+    }
+    #error {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(255, 0, 0, 0.9);
+      color: #fff;
+      padding: 20px;
+      border-radius: 8px;
+      font: 14px system-ui;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div id="info">
+    <div>Points: <span id="point-count">0</span></div>
+    <div>FPS: <span id="fps">0</span></div>
+    <div>Zoom: <span id="zoom">10.00</span></div>
+  </div>
+  <div id="error"></div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

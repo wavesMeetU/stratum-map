@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>Global Cell Towers — WebGPU</title>
+  <script type="module" crossorigin src="/assets/global-cell-towers-NL3e31ga.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/geoarrow.es-tjfS4zSv.js">
+  <link rel="stylesheet" crossorigin href="/assets/global-cell-towers-DLbQin2r.css">
+</head>
+<body>
+  <canvas id="gpu-canvas"></canvas>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading">
+    <div class="loading-spinner"></div>
+    <div>
+      <div id="loading-status" class="loading-status">Initializing WebGPU...</div>
+      <div class="loading-progress">
+        <div id="loading-progress-bar" class="loading-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Title block -->
+  <div id="title" class="overlay title-block">
+    <div class="title">
+      Global Cell Towers
+      <span class="badge">WebGPU</span>
+    </div>
+    <div class="subtitle">OpenCellID Dataset · 5.1M towers</div>
+  </div>
+
+  <!-- Metrics panel -->
+  <div id="metrics" class="overlay metrics">
+    <div class="metric">
+      <div class="metric-label">Towers</div>
+      <div id="tower-count" class="metric-value">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">FPS</div>
+      <div id="fps" class="metric-value">0</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Zoom</div>
+      <div id="zoom" class="metric-value">2.00</div>
+    </div>
+  </div>
+
+  <!-- Legend panel -->
+  <div id="legend" class="overlay legend">
+    <div class="legend-item" data-style="0" style="--swatch:var(--accent-cyan)">
+      <div class="legend-swatch"></div>
+      <div class="legend-info">
+        <span class="legend-name">NR (5G)</span>
+        <span id="count-nr" class="legend-count">—</span>
+      </div>
+    </div>
+    <div class="legend-item" data-style="1" style="--swatch:var(--accent-lte)">
+      <div class="legend-swatch"></div>
+      <div class="legend-info">
+        <span class="legend-name">LTE (4G)</span>
+        <span id="count-lte" class="legend-count">—</span>
+      </div>
+    </div>
+    <div class="legend-item" data-style="2" style="--swatch:var(--accent-umts)">
+      <div class="legend-swatch"></div>
+      <div class="legend-info">
+        <span class="legend-name">UMTS (3G)</span>
+        <span id="count-umts" class="legend-count">—</span>
+      </div>
+    </div>
+    <div class="legend-item" data-style="3" style="--swatch:var(--accent-gsm)">
+      <div class="legend-swatch"></div>
+      <div class="legend-info">
+        <span class="legend-name">GSM (2G)</span>
+        <span id="count-gsm" class="legend-count">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tower info popover -->
+  <div id="popup" class="popup">
+    <span id="popup-radio-badge" class="popup-radio-badge">NR</span>
+    <div class="popup-row">
+      <span class="popup-label">MCC</span>
+      <span id="popup-mcc" class="popup-value">—</span>
+    </div>
+    <div class="popup-row">
+      <span class="popup-label">MNC</span>
+      <span id="popup-net" class="popup-value">—</span>
+    </div>
+    <div class="popup-row">
+      <span class="popup-label">Range</span>
+      <span id="popup-range" class="popup-value">—</span>
+    </div>
+  </div>
+
+  <!-- Credit footer -->
+  <div id="credit" class="overlay credit">
+    Data: <a href="https://opencellid.org/" target="_blank" rel="noopener">OpenCellID</a>
+    · <a href="https://github.com/wavesMeetU/stratum-map" target="_blank" rel="noopener">stratum-map</a>
+  </div>
+
+</body>
+</html>

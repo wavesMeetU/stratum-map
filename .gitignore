@@ -31,3 +31,11 @@ Thumbs.db
 # Build artifacts
 *.log
 *.tgz
+# Browser MCP artifacts
+.playwright-mcp/
+
+# Smoke test screenshots
+tests/playwright/screenshots/
+
+# Local investigation notes
+.local-research/
