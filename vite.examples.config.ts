@@ -24,6 +24,7 @@ export default defineConfig({
         "index": resolve(__dirname, "examples/index.html"),
         "global-cell-towers": resolve(__dirname, "examples/global-cell-towers/index.html"),
         "minimal-native": resolve(__dirname, "examples/minimal-native/index.html"),
+        "standalone-rendering": resolve(__dirname, "examples/standalone-rendering/index.html"),
       },
     },
   },

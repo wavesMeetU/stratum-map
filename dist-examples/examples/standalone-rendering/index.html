@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Standalone WebGPU Rendering Example</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+  <script type="module" crossorigin src="/assets/standalone-rendering-Bd6H52Lj.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/webgpu-points-renderer-BkP41W3D.js">
+  <link rel="modulepreload" crossorigin href="/assets/map-controller-yHAGjYw8.js">
+  <link rel="stylesheet" crossorigin href="/assets/standalone-rendering-B-ajxvjn.css">
+</head>
+<body>
+  <div id="info">
+    <div><strong>Mode:</strong> <span id="mode-display">Standalone</span></div>
+    <div><strong>Zoom:</strong> <span id="zoom-display">10</span></div>
+    <div><strong>Center:</strong> <span id="center-display">[0, 0]</span></div>
+    <div><strong>Frame:</strong> <span id="frame-display">0</span></div>
+    <div><strong>FPS:</strong> <span id="fps-display">--</span></div>
+    <div class="controls-hint">
+      Drag: Pan · Wheel: Zoom · Shift+/-: Zoom in/out<br>
+      Double-click: Zoom to cursor
+    </div>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="map-canvas"></canvas>
+  </div>
+
+</body>
+</html>
