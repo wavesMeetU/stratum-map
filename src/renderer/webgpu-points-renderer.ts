@@ -20,6 +20,8 @@ export interface RendererStats {
   visibleInstances: number;
   /** Number of active geometry chunks */
   chunkCount: number;
+  /** Resident GPU bytes across all active geometry chunks (sum of chunk vertex-buffer sizes) */
+  residentBytes: number;
   /** Number of draw calls per frame */
   drawCalls: number;
   /** Current LOD stride (1 = all instances, 2 = every 2nd, etc.) */
@@ -131,6 +133,12 @@ export class WebGpuPointsRenderer {
   private readonly chunkDrawOrder: string[] = [];
   /** Front = least recently touched (eviction candidate). */
   private readonly chunkLruOrder: string[] = [];
+  /**
+   * Running total of resident GPU bytes across `chunkedChunks` (sum of each slot's vertex
+   * buffer `.size`s). Updated incrementally at every construction/destruction site so
+   * reading it is O(1) — never rescans `chunkedChunks`.
+   */
+  private residentBytes = 0;
   private nextAnonChunkKey = 0;
   gpuBufferPool: GpuBufferPool | null = null;
 
@@ -406,6 +414,7 @@ export class WebGpuPointsRenderer {
     if (msg.vertexCount === 0) {
       if (existing !== undefined) {
         existing.destroy(pool);
+        this.residentBytes -= WebGpuPointsRenderer.chunkByteSize(existing);
         this.chunkedChunks.delete(key);
         this.spliceKeyFromOrders(key);
       }
@@ -414,10 +423,12 @@ export class WebGpuPointsRenderer {
 
     if (existing !== undefined) {
       existing.destroy(pool);
+      this.residentBytes -= WebGpuPointsRenderer.chunkByteSize(existing);
     }
 
     const slot = new GpuPointChunkSlot(this.device, msg, pool);
     this.chunkedChunks.set(key, slot);
+    this.residentBytes += WebGpuPointsRenderer.chunkByteSize(slot);
     if (existing === undefined) {
       this.chunkDrawOrder.push(key);
     }
@@ -431,6 +442,7 @@ export class WebGpuPointsRenderer {
       return false;
     }
     slot.destroy(this.gpuBufferPool ?? undefined);
+    this.residentBytes -= WebGpuPointsRenderer.chunkByteSize(slot);
     this.chunkedChunks.delete(chunkKey);
     this.spliceKeyFromOrders(chunkKey);
     return true;
@@ -478,10 +490,31 @@ export class WebGpuPointsRenderer {
     this.chunkedChunks.clear();
     this.chunkDrawOrder.length = 0;
     this.chunkLruOrder.length = 0;
+    this.residentBytes = 0;
   }
 
   getChunkCount(): number {
     return this.chunkedChunks.size;
+  }
+
+  /**
+   * Sum of resident GPU vertex-buffer bytes across all chunked-layout chunks (position +
+   * style + featureId buffers). O(1) — reads an incrementally maintained running total,
+   * never rescans `chunkedChunks`. Reflects actual `GPUBuffer.size` (including any
+   * pool-driven bucket rounding), not just the requested/logical byte count.
+   */
+  getResidentBytes(): number {
+    return this.residentBytes;
+  }
+
+  /** Resident GPU bytes for one chunk key, or `0` if that key is not currently resident. */
+  getChunkByteSize(chunkKey: string): number {
+    const slot = this.chunkedChunks.get(chunkKey);
+    return slot === undefined ? 0 : WebGpuPointsRenderer.chunkByteSize(slot);
+  }
+
+  private static chunkByteSize(slot: GpuPointChunkSlot): number {
+    return slot.positionBuffer.size + slot.styleIdBuffer.size + slot.featureIdBuffer.size;
   }
 
   /**
@@ -499,6 +532,7 @@ export class WebGpuPointsRenderer {
       totalInstances,
       visibleInstances,
       chunkCount,
+      residentBytes: this.residentBytes,
       drawCalls,
       lodStride,
       geometryLayout: this.geometryLayout,

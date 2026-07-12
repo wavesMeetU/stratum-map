@@ -16,6 +16,18 @@ export interface ChunkedGeometryControllerOptions {
    */
   readonly maxGpuChunks?: number;
   /**
+   * When set, evicts LRU GPU chunks before ingest if resident bytes plus this chunk's
+   * (estimated, pre-pool-rounding) byte size would exceed `maxGpuBytes`. Independent of
+   * `maxGpuChunks` — both may be set together; each triggers its own eviction pass.
+   *
+   * A single incoming chunk that is larger than `maxGpuBytes` on its own is never rejected:
+   * every other chunk is evicted to make maximum room, and the new chunk is still ingested
+   * even if resident bytes end up above `maxGpuBytes` afterward (a soft budget, consistent
+   * with `ingestTransferredWorkerChunk` never refusing valid data the caller explicitly
+   * provided).
+   */
+  readonly maxGpuBytes?: number;
+  /**
    * Drops chunks whose `parseId` is strictly less than this value (stale worker results).
    * Mutually exclusive with `minParseId` — prefer one.
    */
@@ -69,6 +81,21 @@ function defaultChunkKey(msg: GeoJsonWorkerChunkMessage): string {
 }
 
 /**
+ * Estimated GPU byte size for a chunk of `vertexCount` vertices, used only for the
+ * byte-budget pre-eviction check below. Mirrors `GpuPointChunkSlot.byteSizesForVertexCount`
+ * exactly (position 8B/vertex + style 4B/vertex, GPU stride-padded + featureId 4B/vertex) —
+ * duplicated here (rather than imported) so this controller stays importable/testable
+ * without a WebGPU-global environment: `gpu-point-chunk-slot.ts` references
+ * `GPUBufferUsage` at module top level, which throws in plain Node.
+ */
+function estimateChunkBytes(vertexCount: number): number {
+  const positionBytes = vertexCount * 8;
+  const styleGpuBytes = vertexCount * 4;
+  const featureIdBytes = vertexCount * 4;
+  return positionBytes + styleGpuBytes + featureIdBytes;
+}
+
+/**
  * Production-oriented orchestration: optional parse-id filtering, GPU chunk caps (LRU),
  * batched draws, and hooks for keeping CPU state aligned with evictions.
  */
@@ -107,6 +134,10 @@ export class ChunkedGeometryController {
       return;
     }
 
+    // Computed up front: needed by the byte-budget pass below, and doesn't depend on
+    // whether eviction happens first.
+    const chunkKey = ingestOptions?.chunkKey ?? defaultChunkKey(msg);
+
     const max = this.options.maxGpuChunks;
     if (max !== undefined) {
       while (this.renderer.getChunkCount() >= max) {
@@ -118,7 +149,31 @@ export class ChunkedGeometryController {
       }
     }
 
-    const chunkKey = ingestOptions?.chunkKey ?? defaultChunkKey(msg);
+    const byteBudget = this.options.maxGpuBytes;
+    if (byteBudget !== undefined) {
+      // If `chunkKey` already names a resident chunk, this ingest will replace it — those
+      // bytes are about to be freed as part of this same operation, so they must not count
+      // against the incoming chunk's budget need (avoids evicting an unrelated LRU chunk
+      // unnecessarily, and avoids firing a spurious eviction notification for the chunk
+      // actually being replaced, not truly evicted).
+      let replacedBytes = this.renderer.getChunkByteSize(chunkKey);
+      const incomingBytes = estimateChunkBytes(msg.vertexCount);
+
+      while (this.renderer.getResidentBytes() - replacedBytes + incomingBytes > byteBudget) {
+        const k = this.renderer.evictOldestChunk();
+        if (k === undefined) {
+          break; // Nothing left to evict — accept the (oversized) incoming chunk anyway.
+        }
+        if (k === chunkKey) {
+          // The chunk being replaced was itself LRU-oldest and got evicted here — its bytes
+          // are now genuinely gone from residency (not just "about to be freed"), so stop
+          // discounting it to avoid subtracting it twice on the next loop iteration.
+          replacedBytes = 0;
+        }
+        this.notifyChunkEvicted(k);
+      }
+    }
+
     this.renderer.ingestTransferredWorkerChunk(msg, { chunkKey });
 
     if (msg.vertexCount === 0) {
