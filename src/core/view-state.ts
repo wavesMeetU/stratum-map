@@ -68,6 +68,16 @@ export class ViewState {
   }
 
   /**
+   * Whether this ViewState was constructed with an explicit `resolution` override
+   * (as opposed to deriving resolution from `zoom` via the Web Mercator formula).
+   * Mutators use this to decide whether to keep propagating an explicit override
+   * or let the next state fall back to zoom-derived resolution.
+   */
+  hasExplicitResolution(): boolean {
+    return this.resolution !== undefined;
+  }
+
+  /**
    * Compute the clip matrix for transforming world coordinates to clip space
    *
    * The transformation chain is:
@@ -152,15 +162,25 @@ export class ViewState {
   /**
    * Create a new ViewState with updated zoom
    *
+   * When an explicit `resolution` was configured, it is **scaled** by the same
+   * factor a zoom-derived view would apply (halved per +1 zoom level), not copied
+   * unchanged — copying it unchanged would leave `getResolution()` constant and
+   * make the zoom operation visually inert.
+   *
    * @param deltaZoom - Zoom level change (positive = zoom in, negative = zoom out)
    * @returns New ViewState with updated zoom
    */
   zoomBy(deltaZoom: number): ViewState {
+    const newResolution =
+      this.resolution !== undefined
+        ? this.resolution / Math.pow(2, deltaZoom)
+        : undefined;
     return new ViewState(
       this.center,
       this.zoom + deltaZoom,
       this.rotation,
-      this.viewportSize
+      this.viewportSize,
+      newResolution
     );
   }
 
@@ -275,15 +295,23 @@ export function zoomToward(
     ay - (ay - currentView.center[1]) / zoomFactor,
   ];
 
-  // Calculate new zoom level from resolution change
+  // Resolution always scales by 1/zoomFactor regardless of explicit-resolution
+  // mode — this is the actual visual zoom effect and must never be skipped.
   const currentResolution = currentView.getResolution();
   const newResolution = currentResolution / zoomFactor;
+  // `zoom` is kept as an informational/bookkeeping label derived via the Web
+  // Mercator formula (matches legacy behavior); it does not drive the clip
+  // matrix when an explicit resolution is propagated below.
   const newZoom = Math.log2(156543.03392804103 / newResolution);
 
+  // Only propagate the computed resolution as an explicit override when the
+  // input view was itself in explicit-resolution mode — otherwise preserve
+  // the existing zoom-derived (Web Mercator) behavior unchanged.
   return new ViewState(
     newCenter,
     newZoom,
     currentView.rotation,
-    currentView.viewportSize
+    currentView.viewportSize,
+    currentView.hasExplicitResolution() ? newResolution : undefined
   );
 }

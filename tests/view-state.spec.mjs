@@ -143,6 +143,14 @@ describe('ViewState', () => {
 
       assert.ok(composed.equals(direct));
     });
+
+    it('should preserve an explicit resolution unchanged (pan does not scale resolution)', () => {
+      const view = new ViewState([0, 0], 10, 0, [800, 600], 42);
+      const panned = view.pan(100, 50);
+
+      assert.strictEqual(panned.hasExplicitResolution(), true);
+      assert.strictEqual(panned.getResolution(), 42);
+    });
   });
 
   describe('Zoom Operations', () => {
@@ -161,6 +169,43 @@ describe('ViewState', () => {
       assert.strictEqual(zoomed.zoom, 9);
       assert.ok(Math.abs(zoomed.getResolution() - view.getResolution() * 2) < 1e-10);
     });
+
+    it('should not carry an explicit resolution when none was set (zoom-derived mode unchanged)', () => {
+      const view = new ViewState([0, 0], 10, 0, [800, 600]);
+      assert.strictEqual(view.hasExplicitResolution(), false);
+
+      const zoomed = view.zoomBy(1);
+      assert.strictEqual(zoomed.hasExplicitResolution(), false);
+      // Still driven purely by the Web Mercator zoom formula (matches the
+      // pre-existing "should update zoom correctly" assertion above).
+      assert.ok(Math.abs(zoomed.getResolution() - view.getResolution() / 2) < 1e-10);
+    });
+
+    it('should scale (not freeze) an explicit resolution across zoomBy', () => {
+      const customRes = 100;
+      const view = new ViewState([0, 0], 10, 0, [800, 600], customRes);
+      assert.strictEqual(view.hasExplicitResolution(), true);
+      assert.strictEqual(view.getResolution(), customRes);
+
+      const zoomedIn = view.zoomBy(1);
+      assert.strictEqual(zoomedIn.hasExplicitResolution(), true);
+      // Zooming in by one level must halve resolution, exactly like zoom-derived mode —
+      // NOT stay frozen at 100, which would make the zoom operation visually inert.
+      assert.ok(Math.abs(zoomedIn.getResolution() - customRes / 2) < 1e-10);
+      assert.notStrictEqual(zoomedIn.getResolution(), customRes);
+
+      const zoomedOut = view.zoomBy(-1);
+      assert.ok(Math.abs(zoomedOut.getResolution() - customRes * 2) < 1e-10);
+    });
+
+    it('should preserve explicit resolution through a chain of zoomBy calls', () => {
+      const view = new ViewState([0, 0], 10, 0, [800, 600], 64);
+      const chained = view.zoomBy(1).zoomBy(1).zoomBy(-2);
+
+      assert.strictEqual(chained.hasExplicitResolution(), true);
+      // Net zoom delta is 0, so resolution should return to the original value.
+      assert.ok(Math.abs(chained.getResolution() - 64) < 1e-9);
+    });
   });
 
   describe('Rotation Operations', () => {
@@ -176,6 +221,14 @@ describe('ViewState', () => {
       const rotated = view.rotateBy(-Math.PI / 4);
 
       assert.ok(Math.abs(rotated.rotation - (-Math.PI / 4)) < 1e-10);
+    });
+
+    it('should preserve an explicit resolution unchanged (rotate does not scale resolution)', () => {
+      const view = new ViewState([0, 0], 10, 0, [800, 600], 42);
+      const rotated = view.rotateBy(Math.PI / 4);
+
+      assert.strictEqual(rotated.hasExplicitResolution(), true);
+      assert.strictEqual(rotated.getResolution(), 42);
     });
   });
 
@@ -203,6 +256,14 @@ describe('ViewState', () => {
         }
       }
       assert.ok(different);
+    });
+
+    it('should preserve an explicit resolution unchanged (resize does not scale resolution)', () => {
+      const view = new ViewState([0, 0], 10, 0, [800, 600], 42);
+      const resized = view.resize(1024, 768);
+
+      assert.strictEqual(resized.hasExplicitResolution(), true);
+      assert.strictEqual(resized.getResolution(), 42);
     });
   });
 
@@ -306,6 +367,43 @@ describe('zoomToward', () => {
 
     // Resolution should double
     assert.ok(Math.abs(zoomed.getResolution() - view.getResolution() * 2) < 1e-10);
+  });
+
+  it('should not carry an explicit resolution when the input view had none (zoom-derived mode unchanged)', () => {
+    const view = new ViewState([100, 200], 10, 0, [800, 600]);
+    assert.strictEqual(view.hasExplicitResolution(), false);
+
+    const zoomed = zoomToward(view, 2.0);
+    assert.strictEqual(zoomed.hasExplicitResolution(), false);
+    // Falls back to the Web Mercator zoom-derived formula, exactly as before this fix.
+    assert.ok(Math.abs(zoomed.getResolution() - view.getResolution() / 2) < 1e-10);
+  });
+
+  it('should scale (not freeze) an explicit resolution across zoomToward', () => {
+    const customRes = 200;
+    const view = new ViewState([100, 200], 10, 0, [800, 600], customRes);
+    assert.strictEqual(view.hasExplicitResolution(), true);
+
+    const zoomedIn = zoomToward(view, 2.0);
+    assert.strictEqual(zoomedIn.hasExplicitResolution(), true);
+    // zoomFactor = 2.0 must halve resolution — not leave it frozen at 200,
+    // which would make the zoom operation visually inert.
+    assert.ok(Math.abs(zoomedIn.getResolution() - customRes / 2) < 1e-10);
+    assert.notStrictEqual(zoomedIn.getResolution(), customRes);
+
+    const zoomedOut = zoomToward(view, 0.5);
+    assert.ok(Math.abs(zoomedOut.getResolution() - customRes * 2) < 1e-10);
+  });
+
+  it('should keep the anchor point stable under explicit resolution, same as zoom-derived mode', () => {
+    const view = new ViewState([100, 200], 10, 0, [800, 600], 200);
+    const anchorX = 150;
+    const anchorY = 250;
+    const zoomed = zoomToward(view, 2.0, anchorX, anchorY);
+
+    assert.strictEqual(zoomed.hasExplicitResolution(), true);
+    assert.ok(zoomed.center[0] !== view.center[0]);
+    assert.ok(zoomed.center[1] !== view.center[1]);
   });
 });
 
