@@ -17,13 +17,14 @@ export function geometryKindForFeature(geometry: GeoJsonFeature["geometry"]): Ge
  * GPU-picking-safe upper bound for a `FeatureId`.
  *
  * `pick-points-wgsl.ts` encodes `(featureId + 1)` as an unsigned 32-bit value split into
- * RGBA8 bytes; `id-pack.ts` decodes it on the main thread using JS's `|`/`<<` operators,
- * which operate on **signed** 32-bit integers. Once the encoded value reaches `0x80000000`
- * (i.e. `featureId >= 0x7FFFFFFF`), the decoded result comes back negative instead of the
- * intended id. Keeping generated/accepted ids at or below `0x7FFFFFFE` keeps the encoded
- * value at or below `0x7FFFFFFF`, which always decodes correctly.
+ * RGBA8 bytes; `id-pack.ts` decodes it back on the main thread using `>>> 0` to force an
+ * unsigned result, so the full `uint32` range decodes correctly (Stage 5.1.1). The true
+ * ceiling comes from the `+1` sentinel scheme itself, not the decode: `featureId =
+ * 0xFFFFFFFF` would encode as `0xFFFFFFFF + 1`, which wraps to `0` in the shader's `u32`
+ * arithmetic and collides with the reserved background/miss sentinel. `0xFFFFFFFE` is the
+ * highest id whose `+1` encoding never collides with `0`.
  */
-const MAX_SAFE_GPU_FEATURE_ID = 0x7ffffffe;
+const MAX_SAFE_GPU_FEATURE_ID = 0xfffffffe;
 
 function isSafeSourceFeatureId(id: unknown): id is number {
   return (

@@ -194,10 +194,10 @@ describe("Stable feature identity (Stage 5.1)", () => {
     const features = [
       pointFeature(-5, 0, 0),
       pointFeature(3.5, 1, 1),
-      // 0x7FFFFFFF is one above MAX_SAFE_GPU_FEATURE_ID: id-pack.ts decodes the packed
-      // pick value using signed 32-bit operators, so featureId >= 0x7FFFFFFF would decode
-      // as a negative number instead of the intended id.
-      pointFeature(0x7fffffff, 2, 2),
+      // 0xFFFFFFFF is one above MAX_SAFE_GPU_FEATURE_ID (Stage 5.1.1): its `+1` sentinel
+      // encoding would wrap to 0 in the shader's u32 arithmetic, colliding with the
+      // reserved background/miss value, so it is never a usable FeatureId.
+      pointFeature(0xffffffff, 2, 2),
     ];
     const chunk = buildGeoJsonFeatureChunk(features, 0, 0, 0, 0, 1);
     const view = geometryBufferViewFromChunkMessage(chunk).view;
@@ -206,11 +206,20 @@ describe("Stable feature identity (Stage 5.1)", () => {
     assert.equal(view.buffer.featureIds[2], 2);
   });
 
-  it("a numeric id at exactly the GPU-safe max (0x7FFFFFFE) is accepted", () => {
-    const features = [pointFeature(0x7ffffffe, 0, 0)];
+  it("a numeric id at exactly the GPU-safe max (0xFFFFFFFE) is accepted", () => {
+    const features = [pointFeature(0xfffffffe, 0, 0)];
     const chunk = buildGeoJsonFeatureChunk(features, 0, 0, 0, 0, 1);
     const view = geometryBufferViewFromChunkMessage(chunk).view;
-    assert.equal(view.buffer.featureIds[0], 0x7ffffffe);
+    assert.equal(view.buffer.featureIds[0], 0xfffffffe);
+  });
+
+  it("a numeric id one below the GPU-safe max (0x7FFFFFFF, previously the artificial ceiling) is accepted", () => {
+    // Before the Stage 5.1.1 unsigned-decode fix, this value would have been rejected by
+    // the old (incorrect) MAX_SAFE_GPU_FEATURE_ID = 0x7FFFFFFE ceiling.
+    const features = [pointFeature(0x7fffffff, 0, 0)];
+    const chunk = buildGeoJsonFeatureChunk(features, 0, 0, 0, 0, 1);
+    const view = geometryBufferViewFromChunkMessage(chunk).view;
+    assert.equal(view.buffer.featureIds[0], 0x7fffffff);
   });
 
   it("duplicate source ids within one chunk both fall back to positional (no collision)", () => {
