@@ -5,24 +5,115 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-## [0.1.0] - 2026-04-23
-
-First public release on the [npm registry](https://www.npmjs.com/package/stratum-map) as **`stratum-map`**.
+## [0.1.0] - 2025-01-17
 
 ### Added
 
-- Public repository scaffolding: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, GitHub issue and PR templates, `.editorconfig`, `.gitattributes`.
-- Maintainer documentation consolidated under `docs/internal/`.
-- Root `npm test` script running Node-based unit tests after `npm run build`.
-- Package metadata for discovery: `keywords`, `homepage`, `author`; `package.json` is publishable (`private: false`) at version **0.1.0**.
-- GitHub Actions workflow `.github/workflows/publish-npm.yml` to publish tagged releases using the `NPM_REGISTRY_TOKEN` secret (including **workflow_dispatch** for reruns after the secret is added).
-- `prepublishOnly` script so `npm publish` always runs `npm run build` and `npm test` first.
-- README **npm version** badge linking to the package page.
+#### Core Rendering
 
-### Changed
+- **WebGpuPointsRenderer** — WebGPU-based instanced point rendering with style table support
+- **createWebGpuPointsRenderer()** — Factory function for renderer initialization
+- **MapController** — Render lifecycle management with dirty flag optimization
+- **ViewState** — Map camera state (center, zoom, rotation, viewport)
+- **bootstrapAuto()** — Automatic WebGPU initialization and canvas creation
+- **standaloneBootstrap()** — Manual bootstrap with mode selection (OpenLayers/standalone)
 
-- Documentation index and cross-links updated for the new internal doc paths.
-- Demo `main.ts` file header comments aligned with neutral OSS tone (no behavior change).
-- Maintainer notes in `docs/PUBLISHING.md` updated for npm publish steps, `NPM_REGISTRY_TOKEN`, and CI reruns.
+#### Geometry & Data Pipeline
+
+- **FeatureStore** — In-memory feature storage with geometry buffer management
+- **GeometryBuffer / GeometryBufferView** — TypedArray-based geometry contracts
+- **ChunkedGeometryController** — Chunked GPU uploads with LRU eviction
+- **GpuBufferPool** — Optional GPU buffer pooling for reduced allocation overhead
+- **GeoJSON Worker Client** — Web Worker-based GeoJSON parsing
+- **Ingest Worker Client** — Generic worker client for data ingestion
+- **GeoArrow support** — Apache Arrow / GeoArrow integration via `@geoarrow/geoarrow-js`
+
+#### Picking
+
+- **PointHitTester** — Feature-at-pixel queries for hover/click interactions
+- **decodeFeatureIdFromRgba8Bytes()** — Feature ID decoding from GPU picking pass
+- **GPU picking shader** — Offscreen RGBA8 render pass for feature ID encoding
+
+#### Text Rendering
+
+- **TextRenderer** — WebGPU-based text rendering
+- **TextLayer** — High-level text layer with automatic layout
+- **MsdfGlyphAtlas** — MSDF (multi-signed distance field) glyph atlas support
+- **GlyphAtlas** — Bitmap glyph atlas support
+- **layoutTextLabels()** — Label layout engine
+- **declutterLabels()** — Label decluttering with collision detection
+
+#### OpenLayers Integration
+
+- **OpenLayersFrameStateAdapter** — OpenLayers frame state integration
+- **MapController render modes** — Switch between OpenLayers-managed and standalone rendering
+
+#### Utilities
+
+- **panByPixels()** — Pan by pixel delta
+- **zoomToward()** — Zoom toward a point
+- **alignTo4Bytes()** — Byte alignment utilities
+- **bucketByteSizeCeil()** — Buffer size calculation
+
+### Examples
+
+- **minimal-native** — Minimal rendering example with 3-point triangle
+- **standalone-rendering** — Manual renderer setup with pan/zoom controls
+- **integration-example** — OpenLayers integration with mode switching
+- **global-cell-towers** — Real-world example with 5.1M cell towers and picking
+
+### Verification
+
+#### Node Test Suite
+
+- FeatureStore tests
+- GeoJSON pipeline tests
+- Text layout tests
+- MSDF text tests
+- Label declutter tests
+- OpenLayers adapter tests
+- ViewState tests
+
+#### Playwright Tests
+
+- **Smoke tests** — Visual regression across all examples
+- **Interaction tests** — Pan/zoom, mode switching, tower picking
+
+### Notes
+
+#### Requirements
+
+- **WebGPU** — Requires a WebGPU-enabled browser
+- **Node.js >= 20** — For development and testing
+- **TypeScript >= 5.7** — For type safety
+
+#### Browser Support
+
+- **Chrome/Edge 113+** — WebGPU available by default or via flag
+- **Firefox Nightly** — WebGPU under active development
+- **Safari Technology Preview** — WebGPU under active development
+
+Check [caniuse.com/webgpu](https://caniuse.com/webgpu) for current status.
+
+#### Stability
+
+This is the initial public release (v0.1.0). The API surface may evolve based on early adopter feedback. Particular areas under active development:
+
+- Buffer pooling strategies
+- Level-of-detail (LOD) scaling
+- Performance optimization patterns
+- Browser-specific GPU workarounds
+
+#### License
+
+Apache-2.0. See [LICENSE](LICENSE).
+
+#### Third-Party Notices
+
+This project integrates:
+- Apache Arrow (@geoarrow/geoarrow-js)
+- OpenLayers (devDependency, demos only)
+
+Full third-party notices in [website/docs/third-party-notices.md](website/docs/third-party-notices.md).
+
+## [Unreleased]

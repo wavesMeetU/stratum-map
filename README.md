@@ -2,18 +2,68 @@
 
 [![npm version](https://img.shields.io/npm/v/stratum-map.svg)](https://www.npmjs.com/package/stratum-map)
 
-**stratum-map** is a TypeScript library for **WebGPU** map rendering in the browser. It targets the same projection and frame conventions as **[OpenLayers](https://openlayers.org/)** so you can drive a WebGPU canvas from an OL `Map` without duplicating map math. The npm package does not require OpenLayers at runtime for core types and workers; OpenLayers appears as a **devDependency** for the official demo.
+**stratum-map** is a TypeScript library for **WebGPU** map rendering in the browser. It provides GPU-accelerated point rendering, picking, and text rendering with OpenLayers interoperability—without requiring OpenLayers at runtime.
 
 ## What it does
 
-- **Points:** instanced triangle quads with a compact style table, chunked geometry, and optional GPU buffer pooling.
-- **Picking:** optional GPU id render pass and decode helpers for feature-at-pixel queries.
-- **Ingestion:** worker-side GeoJSON (and related paths) into dense `TypedArray` geometry for upload.
-- **Text (optional):** MSDF or bitmap glyph atlases, layout, optional declutter, and a dedicated text pass documented under `docs/api/`.
+- **Points:** Instanced triangle quads with a compact style table, chunked geometry, and optional GPU buffer pooling
+- **Picking:** GPU-based feature-at-pixel queries for hover/click interactions
+- **Ingestion:** Worker-side GeoJSON and GeoArrow parsing into dense `TypedArray` geometry
+- **Text:** Optional MSDF or bitmap glyph atlases with layout and label decluttering
 
 ## Why WebGPU
 
-WebGPU gives explicit buffer and pipeline control, predictable bind layouts, and a path to modern browsers’ primary graphics API. This project keeps **CPU work off the hot path** (workers for parse, minimal main-thread churn) and **data in GPU-friendly layouts** (typed arrays, partial writes) so large geospatial layers remain interactive.
+WebGPU gives explicit buffer and pipeline control, predictable bind layouts, and a path to modern browsers' primary graphics API. This project keeps **CPU work off the hot path** (workers for parsing, minimal main-thread churn) and **data in GPU-friendly layouts** (typed arrays, partial writes) so large geospatial layers remain interactive.
+
+## Quick start
+
+```bash
+npm install stratum-map
+```
+
+**New to Stratum Map?** Start with the [**Getting Started guide**](docs/getting-started.md) for a complete walkthrough of your first render in under 15 minutes.
+
+**Minimal example:**
+
+```ts
+import { bootstrapAuto, ViewState, MapController } from "stratum-map";
+
+async function init() {
+  const { renderer, canvas } = await bootstrapAuto();
+  document.body.appendChild(canvas);
+
+  const viewState = new ViewState({
+    center: [0, 0],
+    zoom: 0,
+    rotation: 0,
+    width: 800,
+    height: 600,
+  });
+
+  const controller = new MapController(renderer, viewState);
+
+  // Add point data and start rendering
+  controller.setPoints(yourGeometryBufferView);
+  controller.start();
+}
+```
+
+## Examples
+
+The `examples/` directory demonstrates progressive usage patterns:
+
+| Example | Level | Description |
+|---------|-------|-------------|
+| [minimal-native](examples/minimal-native/) | Beginner | Simplest working example—3-point triangle |
+| [standalone-rendering](examples/standalone-rendering/) | Intermediate | Manual setup with pan/zoom controls |
+| [integration-example](examples/integration-example/) | Advanced | OpenLayers integration with mode switching |
+| [global-cell-towers](examples/global-cell-towers/) | Real-World | 5.1M cell towers with picking interactions |
+
+**Run examples locally:**
+
+```bash
+npm run demo:dev    # Dev server with all examples
+```
 
 ## Features
 
@@ -23,50 +73,24 @@ WebGPU gives explicit buffer and pipeline control, predictable bind layouts, and
 | Data | `FeatureStore`, geometry buffers, chunked slots with LRU-style eviction |
 | Workers | GeoJSON worker client, ingest worker client (`stratum-map/client`, `stratum-map/ingest-client`) |
 | Text | MSDF atlas loading, `TextLayer` + `TextRenderer`, label declutter |
-| Quality | Node test suites for core layout paths; Playwright benches for pan/zoom and worker demos |
+| Picking | GPU feature ID encoding, `PointHitTester` for hover/click interactions |
 
-## Documentation website
+## Documentation
 
-Browse the **Docusaurus** site (landing page, guides, API reference, examples gallery) after [enabling GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) with **GitHub Actions**:
+- **[Getting Started](docs/getting-started.md)** — First render in 15 minutes
+- **[USAGE.md](docs/USAGE.md)** — Advanced usage patterns and API reference
+- **[CHANGELOG.md](CHANGELOG.md)** — Version history and release notes
+- **[Documentation Index](docs/DOCUMENTATION_INDEX.md)** — Complete documentation map
 
-**[https://wavesMeetU.github.io/stratum-map/](https://wavesMeetU.github.io/stratum-map/)** (build from the `website/` directory; see `website/README.md`). **Live demos:** [Points](https://wavesMeetU.github.io/stratum-map/demo) · [GPU picking](https://wavesMeetU.github.io/stratum-map/examples/picking) · [GPU text labels](https://wavesMeetU.github.io/stratum-map/examples/text).
-
-Local preview:
-
-```bash
-npm run website:install
-npm run website:start
-```
-
-## Screenshots
-
-> Placeholder: add `docs/images/demo-points.png` and `docs/images/demo-labels.png` after capturing the official demo.
-
-```text
-docs/images/demo-points.png   — points + pan/zoom
-docs/images/demo-labels.png   — MSDF labels + declutter
-```
-
-## Quick start
-
-```bash
-npm install stratum-map
-```
-
-```ts
-import { createWebGpuPointsRenderer } from "stratum-map";
-
-const renderer = await createWebGpuPointsRenderer({ canvas: document.querySelector("canvas")! });
-// Each frame: set mapToClip from your map, setVertexBuffers..., then render.
-```
-
-Full export map and coordinate notes: **[docs/USAGE.md](docs/USAGE.md)** and **[docs/api/QuickStart.md](docs/api/QuickStart.md)**.
+**Architecture:**
+- **[HLD.md](docs/HLD.md)** — High-level design and architecture
+- **[LLD.md](docs/LLD.md)** — Low-level implementation details
 
 ## OpenLayers integration
 
-The demo (`npm run demo:dev`) composes an OL `Map` with a WebGPU overlay canvas: same size, device pixel ratio, and a `postrender` handler that copies the view’s **column-major** map-to-WebGL matrix into the renderer. See **`examples/demo/main.ts`** for the wiring pattern (view state → frame uniforms → draw).
+Stratum Map targets the same projection and frame conventions as **[OpenLayers](https://openlayers.org/)** so you can drive a WebGPU canvas from an OL `Map` without duplicating map math. The npm package does not require OpenLayers at runtime for core types and workers.
 
-Conceptually:
+**Integration pattern:**
 
 ```text
 ol/Map + ol/View
@@ -75,34 +99,21 @@ ol/Map + ol/View
     → WebGpuPointsRenderer.setMapToClip / render
 ```
 
-## Text rendering
-
-Use **`TextLayer`** with **`MsdfGlyphAtlas`** or **`GlyphAtlas`**, feed **`TextLabel`** instances, and call rebuild when the view or labels change. API surface is documented in Markdown under **`docs/api/`** (`TextLayer.md`, `TextRenderer.md`, `MsdfGlyphAtlas.md`, `LabelDeclutter.md`).
-
-## Benchmarks
-
-Playwright-driven scenarios live under **`tests/`** and **`examples/pan-zoom-bench/`**.
-
-```bash
-npm run verify:pan-zoom    # build bench app + Playwright pan/zoom
-npm run bench:pan-zoom     # preview bench build locally
-```
-
-Numbers are machine-dependent; run on your target hardware before drawing conclusions.
-
-## Roadmap
-
-Non-exhaustive direction:
-
-- Broader format coverage and streaming ergonomics.
-- More examples and hosted API docs.
-- Performance guides per browser and GPU tier.
-
-Issues and discussion: **[GitHub Issues](https://github.com/wavesMeetU/stratum-map/issues)**.
+See the [integration-example](examples/integration-example/) for a complete working example.
 
 ## Browser support
 
-Requires **WebGPU** (Chrome/Edge stable channels with flag or default per vendor policy, Safari Technology Preview where available). Check [https://caniuse.com/webgpu](https://caniuse.com/webgpu) for current status. **Node ≥ 20** for development and headless tests.
+**WebGPU required:**
+
+- **Chrome/Edge 113+** — WebGPU available by default or via flag
+- **Firefox Nightly** — WebGPU under active development
+- **Safari Technology Preview** — WebGPU under active development
+
+Check [caniuse.com/webgpu](https://caniuse.com/webgpu) for current status.
+
+**Development requirements:**
+- **Node.js >= 20**
+- **TypeScript >= 5.7**
 
 ## Contributing
 
@@ -112,7 +123,7 @@ See **[CONTRIBUTING.md](CONTRIBUTING.md)** and **[CODE_OF_CONDUCT.md](CODE_OF_CO
 
 Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE).
 
-Hosted demos bundle **OpenLayers** (BSD-2-Clause). Full notice: [website/docs/third-party-notices.md](website/docs/third-party-notices.md) (also **Documentation → Third-party notices** on the docs site).
+Hosted demos bundle **OpenLayers** (BSD-2-Clause). Full notice: [website/docs/third-party-notices.md](website/docs/third-party-notices.md).
 
 ## Development
 
@@ -127,5 +138,5 @@ npm run demo:dev    # OpenLayers + WebGPU demo (dev server)
 
 ---
 
-**Repository:** [github.com/wavesMeetU/stratum-map](https://github.com/wavesMeetU/stratum-map)  
-**Documentation index:** [docs/DOCUMENTATION_INDEX.md](docs/DOCUMENTATION_INDEX.md)
+**Repository:** [github.com/wavesMeetU/stratum-map](https://github.com/wavesMeetU/stratum-map)
+**npm:** [stratum-map](https://www.npmjs.com/package/stratum-map)

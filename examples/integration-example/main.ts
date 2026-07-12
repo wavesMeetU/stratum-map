@@ -1,16 +1,19 @@
 /**
- * Integration Example - MapController with Dual Mode Support
+ * Integration Example - MapController Mode Transitions
  *
- * This example demonstrates how to use MapController with both:
- * 1. OpenLayers-managed rendering (legacy compatibility)
+ * This example demonstrates rendering architecture migration patterns:
+ * 1. OpenLayers-managed rendering (compatibility mode for existing apps)
  * 2. Standalone rendering (new standalone path)
+ * 3. Runtime mode switching (migration path)
  *
- * The example shows how to:
- * - Create a MapController
- * - Switch between modes at runtime
- * - Handle resize events
- * - Update ViewState
- * - Use callbacks for frame timing
+ * Purpose:
+ * - Show MapController dual-mode capability
+ * - Demonstrate migration from managed to standalone rendering
+ * - Illustrate ViewState management patterns
+ * - Provide mode switching examples
+ *
+ * Note: This example demonstrates the API patterns and mode transitions.
+ * It does not embed a live OpenLayers map.
  */
 
 import { WebGpuPointsRenderer, MapController, ViewState, type RenderMode } from '../../src/index.js';
@@ -47,10 +50,10 @@ function generateSamplePoints(count: number): { positions: Float32Array; feature
 }
 
 /**
- * Example 1: OpenLayers-managed rendering (legacy compatibility)
+ * Example 1: OpenLayers-managed rendering (compatibility mode)
  *
- * In this mode, MapController delegates frame timing to OpenLayers.
- * The renderer is updated in OpenLayers' postrender event.
+ * In this mode, MapController delegates frame timing to an external system
+ * (e.g., OpenLayers postrender event). The renderer doesn't control the loop.
  */
 async function exampleOpenLayersMode(): Promise<MapController> {
   console.log('=== OpenLayers-managed Rendering Example ===');
@@ -58,11 +61,15 @@ async function exampleOpenLayersMode(): Promise<MapController> {
   // Check WebGPU support
   if (!navigator.gpu) {
     console.error('WebGPU is not supported');
-    return;
+    throw new Error('WebGPU not supported');
   }
 
   const container = document.getElementById('map-container')!;
   const canvas = document.getElementById('map-canvas') as HTMLCanvasElement;
+
+  if (!container || !canvas) {
+    throw new Error('Required DOM elements not found');
+  }
 
   // Create renderer
   const renderer = await WebGpuPointsRenderer.create({ canvas });
@@ -90,15 +97,23 @@ async function exampleOpenLayersMode(): Promise<MapController> {
   });
   resizeObserver.observe(container);
 
-  // In OpenLayers mode, we need to set up the render callback
-  // This would typically be done in an OpenLayers postrender handler
-  // For this example, we simulate it:
+  // In OpenLayers mode, an external system controls frame timing
+  // For demonstration, we set a callback that would be called by OpenLayers
   controller.setOpenLayersRenderFrame(() => {
-    // In OpenLayers mode, the controller doesn't control frame timing
-    // OpenLayers calls this callback in its postrender event
-    // This demonstrates how to integrate with OpenLayers
-    console.log('OpenLayers would call this in postrender');
+    // In real OpenLayers integration, this would be called in postrender
+    console.log('External render callback invoked');
   });
+
+  // Simulate external frame timing for demo
+  let frameIndex = 0;
+  const frameInterval = setInterval(() => {
+    controller.renderFrame(performance.now());
+    frameIndex++;
+    if (frameIndex > 10) {
+      clearInterval(frameInterval);
+      console.log('OpenLayers mode demo complete');
+    }
+  }, 100);
 
   currentMode = 'openlayers';
   console.log('Mode: OpenLayers-managed');
@@ -117,11 +132,15 @@ async function exampleStandaloneMode(): Promise<MapController> {
   // Check WebGPU support
   if (!navigator.gpu) {
     console.error('WebGPU is not supported');
-    return;
+    throw new Error('WebGPU not supported');
   }
 
   const container = document.getElementById('map-container')!;
   const canvas = document.getElementById('map-canvas') as HTMLCanvasElement;
+
+  if (!container || !canvas) {
+    throw new Error('Required DOM elements not found');
+  }
 
   // Create renderer
   const renderer = await WebGpuPointsRenderer.create({ canvas });
@@ -134,7 +153,8 @@ async function exampleStandaloneMode(): Promise<MapController> {
   });
 
   // Initial ViewState
-  const initialViewState = new ViewState([0, 0], 10, 0, [800, 600]);
+  const { width, height } = container.getBoundingClientRect();
+  const initialViewState = new ViewState([0, 0], 10, 0, [width, height]);
 
   // Create MapController in standalone mode
   const controller = new MapController({
@@ -160,7 +180,7 @@ async function exampleStandaloneMode(): Promise<MapController> {
   let angle = 0;
   let lastX = 0;
   let lastY = 0;
-  setInterval(() => {
+  const panInterval = setInterval(() => {
     angle += 0.01;
     const radius = 2000000;
     const x = Math.cos(angle) * radius;
@@ -174,7 +194,7 @@ async function exampleStandaloneMode(): Promise<MapController> {
   // Example: Zoom in/out periodically
   let zoomLevel = 10;
   let zoomingIn = true;
-  setInterval(() => {
+  const zoomInterval = setInterval(() => {
     const delta = zoomingIn ? 0.05 : -0.05;
     zoomLevel += delta;
 
@@ -185,6 +205,9 @@ async function exampleStandaloneMode(): Promise<MapController> {
     controller.zoomBy(delta);
   }, 500);
 
+  // Store intervals for cleanup
+  (controller as any)._demoIntervals = [panInterval, zoomInterval];
+
   currentMode = 'standalone';
   console.log('Mode: Standalone');
   return controller;
@@ -193,7 +216,7 @@ async function exampleStandaloneMode(): Promise<MapController> {
 /**
  * Example 3: Mode switching at runtime
  *
- * This shows how to switch between OpenLayers and standalone modes
+ * This shows how to switch between OpenLayers-managed and standalone modes.
  * The switch preserves the current ViewState and rendering state.
  */
 function exampleModeSwitching() {
@@ -207,25 +230,20 @@ function exampleModeSwitching() {
 
   // Simulate mode switching button
   const toggleButton = document.createElement('button');
+  toggleButton.id = 'mode-toggle-button';
   toggleButton.textContent = 'Switch to Standalone';
-  toggleButton.style.cssText = `
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    padding: 10px 20px;
-    background: #4a90d9;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-  `;
   document.body.appendChild(toggleButton);
 
   let inOpenLayersMode = true;
 
   toggleButton.addEventListener('click', async () => {
     if (sharedController) {
+      // Clear any demo intervals
+      const intervals = (sharedController as any)._demoIntervals;
+      if (intervals) {
+        intervals.forEach((interval: number) => clearInterval(interval));
+      }
+
       // Switch mode
       if (inOpenLayersMode) {
         console.log('Switching to Standalone mode...');
@@ -233,12 +251,22 @@ function exampleModeSwitching() {
         sharedController.startRenderLoop();
         toggleButton.textContent = 'Switch to OpenLayers';
         inOpenLayersMode = false;
+
+        // Start standalone animation
+        exampleStandaloneMode().then((ctrl) => {
+          sharedController = ctrl;
+        });
       } else {
         console.log('Switching to OpenLayers mode...');
         sharedController.switchMode('openlayers');
         sharedController.stopRenderLoop();
         toggleButton.textContent = 'Switch to Standalone';
         inOpenLayersMode = true;
+
+        // Start OpenLayers simulation
+        exampleOpenLayersMode().then((ctrl) => {
+          sharedController = ctrl;
+        });
       }
     }
   });
@@ -254,9 +282,10 @@ function exampleModeSwitching() {
  */
 function createModeSwitchingUI() {
   const ui = document.createElement('div');
+  ui.className = 'mode-switching-ui';
   ui.innerHTML = `
-    <h3>Integration Example</h3>
-    <p>This example demonstrates how to switch between OpenLayers-managed and standalone rendering modes.</p>
+    <h3>MapController Integration Example</h3>
+    <p>This example demonstrates MapController mode transitions and rendering patterns.</p>
     <p>Current mode: <strong id="current-mode">Loading...</strong></p>
     <div style="margin-top: 10px;">
       <button id="ol-btn" style="padding: 8px 16px; margin-right: 8px;">OpenLayers Mode</button>
@@ -267,74 +296,47 @@ function createModeSwitchingUI() {
   document.body.appendChild(ui);
 
   // Mode switching buttons
-  document.getElementById('ol-btn')!.addEventListener('click', () => {
+  const olBtn = document.getElementById('ol-btn');
+  const saBtn = document.getElementById('sa-btn');
+  const autoBtn = document.getElementById('auto-btn');
+
+  olBtn?.addEventListener('click', () => {
     window.location.hash = '#openlayers';
+    location.reload();
   });
 
-  document.getElementById('sa-btn')!.addEventListener('click', () => {
+  saBtn?.addEventListener('click', () => {
     window.location.hash = '#standalone';
+    location.reload();
   });
 
-  document.getElementById('auto-btn')!.addEventListener('click', () => {
+  autoBtn?.addEventListener('click', () => {
     window.location.hash = '#auto';
+    location.reload();
   });
 
-  // Handle hash navigation
-  window.addEventListener('hashchange', () => {
-    const hash = window.location.hash.substring(1) || 'openlayers';
-    document.getElementById('current-mode')!.textContent = hash === 'openlayers' ? 'OpenLayers-managed' : 'Standalone';
+  // Update mode display based on current hash
+  const hash = window.location.hash.substring(1) || 'openlayers';
+  const modeDisplay = document.getElementById('current-mode');
+  if (modeDisplay) {
+    modeDisplay.textContent = hash === 'openlayers' ? 'OpenLayers-managed (Simulation)' :
+                            hash === 'standalone' ? 'Standalone (Animation)' :
+                            'Auto-Switching Demo';
+  }
 
-    if (hash === 'openlayers') {
-      exampleOpenLayersMode();
-    } else if (hash === 'standalone') {
-      exampleStandaloneMode();
-    } else {
-      exampleModeSwitching();
-    }
-  });
-
-  // Initialize based on current hash
-  if (window.location.hash.includes('standalone')) {
-    exampleStandaloneMode();
+  // Handle initial mode
+  if (hash === 'openlayers') {
+    exampleOpenLayersMode().then((ctrl) => {
+      sharedController = ctrl;
+    });
+  } else if (hash === 'standalone') {
+    exampleStandaloneMode().then((ctrl) => {
+      sharedController = ctrl;
+    });
   } else {
-    exampleOpenLayersMode();
+    exampleModeSwitching();
   }
 }
 
-// Create HTML
-const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MapController Integration Example</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    #map-container {
-      width: 100vw;
-      height: 100vh;
-    }
-    canvas {
-      display: block;
-    width: 100%;
-      height: 100%;
-    }
-  </style>
-</head>
-<body>
-  <div id="map-container">
-    <canvas id="map-canvas"></canvas>
-  </div>
-</body>
-</html>
-`;
-
-document.body.innerHTML = html;
-
-// Start
+// Start the example
 createModeSwitchingUI();
