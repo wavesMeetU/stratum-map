@@ -197,3 +197,105 @@ test.describe("WebGPU visual regression (points)", () => {
     );
   });
 });
+
+interface LineEvictionScenarioResult {
+  readonly keysBefore: readonly string[];
+  readonly residentBytesBefore: number;
+  readonly bytesPerChunk: number;
+  readonly evicted: readonly string[];
+  readonly keysAfter: readonly string[];
+  readonly residentBytesAfter: number;
+  readonly chunkCountAfter: number;
+}
+
+async function runLineEvictionScenario(
+  page: Page,
+  ingestCount: number,
+  evictCount: number,
+): Promise<LineEvictionScenarioResult> {
+  return page.evaluate(
+    ({ ingestCount, evictCount }) => {
+      const h = (globalThis as unknown as {
+        __visualHarness: { runLineEvictionScenario: (i: number, e: number) => LineEvictionScenarioResult };
+      }).__visualHarness;
+      return h.runLineEvictionScenario(ingestCount, evictCount);
+    },
+    { ingestCount, evictCount },
+  );
+}
+
+/**
+ * Stage 6.3: `WebGpuLineRenderer.evictOldestChunks(count)` regression coverage. Each
+ * synthetic chunk ingested by `runLineEvictionScenario` (see `visual-harness.ts`) is an
+ * identical, deterministic byte size, so `bytesPerChunk` gives an exact expected value for
+ * byte accounting without re-deriving GPU buffer sizes on the Node side.
+ */
+test.describe("WebGPU line renderer chunk eviction (points+lines harness)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 480 });
+  });
+
+  test("zero count evicts nothing and leaves residency unchanged", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runLineEvictionScenario(page, 5, 0);
+
+    expect(result.evicted).toEqual([]);
+    expect(result.keysAfter).toEqual(result.keysBefore);
+    expect(result.residentBytesAfter).toBe(result.residentBytesBefore);
+    expect(result.chunkCountAfter).toBe(5);
+  });
+
+  test("positive count evicts exactly that many, oldest-ingested first", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runLineEvictionScenario(page, 5, 2);
+
+    // Ingest order is evict-test-0 .. evict-test-4; no chunk is re-touched after ingest, so
+    // LRU order matches ingest order — the two oldest are evicted first, in that order.
+    expect(result.evicted).toEqual(["evict-test-0", "evict-test-1"]);
+    expect(result.keysAfter).toEqual(["evict-test-2", "evict-test-3", "evict-test-4"]);
+    expect(result.chunkCountAfter).toBe(3);
+  });
+
+  test("count larger than residency evicts everything and stops cleanly (no throw, no over-eviction)", async ({
+    page,
+  }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runLineEvictionScenario(page, 3, 10);
+
+    expect(result.evicted).toEqual(["evict-test-0", "evict-test-1", "evict-test-2"]);
+    expect(result.keysAfter).toEqual([]);
+    expect(result.chunkCountAfter).toBe(0);
+    expect(result.residentBytesAfter).toBe(0);
+  });
+
+  test("byte accounting: resident bytes after eviction match remaining chunk count exactly", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runLineEvictionScenario(page, 6, 4);
+
+    expect(result.bytesPerChunk).toBeGreaterThan(0);
+    expect(result.residentBytesBefore).toBe(6 * result.bytesPerChunk);
+    expect(result.chunkCountAfter).toBe(2);
+    expect(result.residentBytesAfter).toBe(2 * result.bytesPerChunk);
+    expect(result.residentBytesBefore - result.residentBytesAfter).toBe(4 * result.bytesPerChunk);
+  });
+});

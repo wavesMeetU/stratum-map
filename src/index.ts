@@ -45,6 +45,19 @@ export type {
   WebGpuPointsRendererOptions,
   RendererStats,
 } from "./renderer/webgpu-points-renderer.js";
+export type { LineStyle } from "./renderer/line-style.js";
+export { DEFAULT_LINE_STYLE, MAX_LINE_STYLES } from "./renderer/line-style.js";
+export {
+  WebGpuLineRenderer,
+  createWebGpuLineRenderer,
+} from "./renderer/webgpu-line-renderer.js";
+export type {
+  IngestLineChunkOptions,
+  WebGpuLineRendererOptions,
+  LineRendererStats,
+} from "./renderer/webgpu-line-renderer.js";
+export { buildLineSegments } from "./gpu/line-segment-prep.js";
+export type { LineSegmentBatch } from "./gpu/line-segment-prep.js";
 export { alignTo4Bytes } from "./gpu/byte-align.js";
 export { bucketByteSizeCeil } from "./gpu/buffer-bucket.js";
 export {

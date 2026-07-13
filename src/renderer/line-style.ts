@@ -1,13 +1,11 @@
 /**
  * RGBA in linear 0-1 (host may pass sRGB; document per integration).
  *
- * `widthPx` is measured in **backing-store (physical) pixels**, intentionally matching
- * `PointStyle.sizePx`'s actual (not documented) current behavior — Stage 6.1/6.2
- * empirically confirmed `PointStyle.sizePx` is applied against the backing-store
- * `viewport_px` uniform, not true CSS pixels, despite its doc comment. This type mirrors
- * that real behavior rather than introducing a second, inconsistent pixel convention.
- * Treat as internal/experimental pending a resolution of the shared point/line DPI
- * semantics — do not assume CSS-pixel behavior from the field name alone.
+ * `widthPx` is measured in **backing-store (physical) pixels** — the shader multiplies it
+ * directly against the canvas's `viewport_px` uniform (`canvas.width`/`canvas.height`), the
+ * same convention `PointStyle.sizePx` uses (Stage 6.3 settled this as the supported
+ * contract for both styles; see `PointStyle.sizePx`'s doc). Not CSS pixels — divide by
+ * `devicePixelRatio` yourself if you want CSS-pixel-equivalent sizing.
  */
 export interface LineStyle {
   readonly color: readonly [number, number, number, number];

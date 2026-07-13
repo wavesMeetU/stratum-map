@@ -1,5 +1,5 @@
 /**
- * Points + Lines coexistence example (Stage 6.2, experimental).
+ * Points + Lines coexistence example (Stage 6.2 implementation, Stage 6.3 public API).
  *
  * Proves the smallest complete LineString rendering vertical slice:
  * - multiple LineString features render with correct segment extrusion
@@ -13,18 +13,25 @@
  * Dataset is small and fixed (no network fetch, no worker) — this is an architectural
  * example, not a benchmark.
  *
- * The line rendering API used here (WebGpuLineRenderer, LineStyle, buildLineSegments) is
- * intentionally NOT exported from the package's public barrel (src/index.ts) yet — see
- * docs on LineStyle.widthPx for why (unresolved shared point/line DPI semantics). This
- * example imports the modules directly, exactly like every other example already imports
- * WebGpuPointsRenderer directly rather than through the package entry point.
+ * Stage 6.3 exported the line rendering API (`WebGpuLineRenderer`, `LineStyle`,
+ * `buildLineSegments`, `LineSegmentBatch`) from the package's public barrel
+ * (`src/index.ts`) — this example imports everything from `"stratum-map"` rather than
+ * direct `src/...` paths, doubling as this repo's public-API usage coverage for the line
+ * renderer (verified by this example's own smoke/interaction tests): renderer creation,
+ * `GeometryBuffer` + `FeatureRecord[]` → `buildLineSegments` LineString preparation,
+ * multiple line/point styles, picking, and point/line coexistence, all reachable without
+ * touching internal modules.
  */
-import { WebGpuPointsRenderer } from "../../src/renderer/webgpu-points-renderer.js";
-import { WebGpuLineRenderer } from "../../src/renderer/webgpu-line-renderer.js";
-import { buildLineSegments } from "../../src/gpu/line-segment-prep.js";
-import { ViewState, panByPixels, zoomToward } from "../../src/core/view-state.js";
-import type { FeatureRecord } from "../../src/core/feature-record.js";
-import type { GeometryBuffer } from "../../src/core/geometry-buffer.js";
+import {
+  WebGpuPointsRenderer,
+  WebGpuLineRenderer,
+  buildLineSegments,
+  ViewState,
+  panByPixels,
+  zoomToward,
+  type FeatureRecord,
+  type GeometryBuffer,
+} from "stratum-map";
 
 // ── deterministic dataset (world units, EPSG:3857-like meters) ─────────────
 

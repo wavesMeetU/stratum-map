@@ -197,7 +197,7 @@ export class WebGpuLineRenderer {
     return this.device;
   }
 
-  getFormat(): GPUTextureFormat {
+  getCanvasFormat(): GPUTextureFormat {
     return this.format;
   }
 
@@ -289,6 +289,19 @@ export class WebGpuLineRenderer {
       return key;
     }
     return undefined;
+  }
+
+  /** Repeatedly evicts LRU chunks until `count` removals or the set is empty. */
+  evictOldestChunks(count: number): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const k = this.evictOldestChunk();
+      if (k === undefined) {
+        break;
+      }
+      out.push(k);
+    }
+    return out;
   }
 
   clearChunks(): void {
