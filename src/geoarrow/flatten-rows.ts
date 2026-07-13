@@ -1,5 +1,13 @@
 import * as GeoArrow from "@geoarrow/geoarrow-js";
 import { readCoordXY, requireInterleavedPointColumn } from "./coord-access.js";
+import type { PolygonRingAccumulator } from "../parser/geojson-flatten.js";
+
+/** Appends one polygon part's ring lengths (`ringLens`, exterior first) to `topology`. */
+function pushPolygonPart(topology: PolygonRingAccumulator, ringLens: readonly number[]): void {
+  if (ringLens.length === 0) return; // empty part — nothing to record
+  for (const len of ringLens) topology.ringVertexCounts.push(len);
+  topology.partRingCounts.push(ringLens.length);
+}
 
 function writePointIndexRange(
   pointData: GeoArrow.data.PointData,
@@ -66,6 +74,7 @@ function writePolygonRow(
   featureId: number,
   styleId: number,
   vertexOffset: number,
+  polygonTopology?: PolygonRingAccumulator,
 ): number {
   const ringBegin = polyData.valueOffsets![row]!;
   const ringEnd = polyData.valueOffsets![row + 1]!;
@@ -74,10 +83,11 @@ function writePolygonRow(
   const { dim } = requireInterleavedPointColumn(pointData);
   const ro = rings.valueOffsets!;
   let o = vertexOffset;
+  const ringLens: number[] = [];
   for (let r = ringBegin; r < ringEnd; r++) {
     const ps = ro[r]!;
     const pe = ro[r + 1]!;
-    o += writePointIndexRange(
+    const written = writePointIndexRange(
       pointData,
       dim,
       ps,
@@ -89,7 +99,10 @@ function writePolygonRow(
       styleId,
       o,
     );
+    o += written;
+    ringLens.push(written);
   }
+  if (polygonTopology) pushPolygonPart(polygonTopology, ringLens);
   return o - vertexOffset;
 }
 
@@ -138,13 +151,24 @@ function writeMultiPolygonRow(
   featureId: number,
   styleId: number,
   vertexOffset: number,
+  polygonTopology?: PolygonRingAccumulator,
 ): number {
   const polyBegin = mp.valueOffsets![row]!;
   const polyEnd = mp.valueOffsets![row + 1]!;
   const polys = GeoArrow.child.getMultiPolygonChild(mp);
   let o = vertexOffset;
   for (let P = polyBegin; P < polyEnd; P++) {
-    o += writePolygonRow(polys, P, positions, featureIds, styleIds, featureId, styleId, o);
+    o += writePolygonRow(
+      polys,
+      P,
+      positions,
+      featureIds,
+      styleIds,
+      featureId,
+      styleId,
+      o,
+      polygonTopology,
+    );
   }
   return o - vertexOffset;
 }
@@ -158,6 +182,7 @@ export function writeFlattenedGeoArrowRow(
   featureId: number,
   styleId: number,
   vertexOffset: number,
+  polygonTopology?: PolygonRingAccumulator,
 ): number {
   if (!data.getValid(row)) return 0;
 
@@ -183,13 +208,33 @@ export function writeFlattenedGeoArrowRow(
     return writeLineStringLikeRow(data, row, positions, featureIds, styleIds, featureId, styleId, vertexOffset);
   }
   if (GeoArrow.data.isPolygonData(data)) {
-    return writePolygonRow(data, row, positions, featureIds, styleIds, featureId, styleId, vertexOffset);
+    return writePolygonRow(
+      data,
+      row,
+      positions,
+      featureIds,
+      styleIds,
+      featureId,
+      styleId,
+      vertexOffset,
+      polygonTopology,
+    );
   }
   if (GeoArrow.data.isMultiLineStringData(data)) {
     return writeMultiLineStringRow(data, row, positions, featureIds, styleIds, featureId, styleId, vertexOffset);
   }
   if (GeoArrow.data.isMultiPolygonData(data)) {
-    return writeMultiPolygonRow(data, row, positions, featureIds, styleIds, featureId, styleId, vertexOffset);
+    return writeMultiPolygonRow(
+      data,
+      row,
+      positions,
+      featureIds,
+      styleIds,
+      featureId,
+      styleId,
+      vertexOffset,
+      polygonTopology,
+    );
   }
   return 0;
 }

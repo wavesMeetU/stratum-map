@@ -87,6 +87,14 @@ async function runParse(msg: Extract<GeoJsonWorkerRequest, { type: "parse" }>): 
       );
 
       const transfer: Transferable[] = [chunk.positions, chunk.featureIds, chunk.styleIds];
+      if (chunk.polygonVertexCount > 0 || chunk.polygonIndexCount > 0) {
+        transfer.push(
+          chunk.polygonPositions,
+          chunk.polygonFeatureIds,
+          chunk.polygonStyleIds,
+          chunk.polygonIndices,
+        );
+      }
       self.postMessage(chunk, transfer);
 
       chunkIndex += 1;

@@ -89,6 +89,14 @@ async function runFlatgeobufBbox(
     featureCursor += slice.length;
     chunkIndex += 1;
     const transfer: Transferable[] = [chunk.positions, chunk.featureIds, chunk.styleIds];
+    if (chunk.polygonVertexCount > 0 || chunk.polygonIndexCount > 0) {
+      transfer.push(
+        chunk.polygonPositions,
+        chunk.polygonFeatureIds,
+        chunk.polygonStyleIds,
+        chunk.polygonIndices,
+      );
+    }
     self.postMessage(chunk, transfer);
   };
 
@@ -193,6 +201,14 @@ async function runWkb(msg: Extract<IngestWorkerRequest, { type: "parse-wkb" }>):
     );
     chunkIndex += 1;
     const transfer: Transferable[] = [chunk.positions, chunk.featureIds, chunk.styleIds];
+    if (chunk.polygonVertexCount > 0 || chunk.polygonIndexCount > 0) {
+      transfer.push(
+        chunk.polygonPositions,
+        chunk.polygonFeatureIds,
+        chunk.polygonStyleIds,
+        chunk.polygonIndices,
+      );
+    }
     self.postMessage(chunk, transfer);
     await new Promise<void>((r) => setTimeout(r, 0));
   }

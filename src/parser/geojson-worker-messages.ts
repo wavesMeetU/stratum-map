@@ -38,6 +38,21 @@ export interface GeoJsonWorkerChunkMessage {
   readonly records: readonly GeoJsonWorkerFeatureRecord[];
   /** Optional tile / viewport key for cache-oriented hosts (FlatGeobuf bbox loads). */
   readonly tileKey?: string;
+  /**
+   * Triangulated polygon geometry for this chunk (Stage 6.5), already worker-side
+   * triangulated via `earcut` — see `PreparedPolygonGeometry`
+   * (`src/gpu/polygon-triangulation.ts`). Always present, zero-length/zero-count when the
+   * chunk has no polygon-kind features — never `undefined`, matching how `positions` etc.
+   * are already zero-length rather than optional for an empty chunk. `polygonPositions`
+   * and `polygonIndices` use their own tightly-packed, chunk-local vertex numbering — do
+   * NOT index them with values derived from `vertexCount`/`positions`.
+   */
+  readonly polygonVertexCount: number;
+  readonly polygonIndexCount: number;
+  readonly polygonPositions: ArrayBuffer;
+  readonly polygonFeatureIds: ArrayBuffer;
+  readonly polygonStyleIds: ArrayBuffer;
+  readonly polygonIndices: ArrayBuffer;
 }
 
 export interface GeoJsonWorkerDoneMessage {

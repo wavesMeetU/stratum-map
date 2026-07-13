@@ -1,12 +1,18 @@
 import type { GeoJsonFeature } from "./geojson-types.js";
 import {
   countVertices,
+  createPolygonRingAccumulator,
   geometryKindFor,
   writeFlattenedGeometry,
 } from "./geojson-flatten.js";
 import type { GeometryKind } from "../types/geometry.js";
 import type { GeoJsonWorkerChunkMessage, GeoJsonWorkerFeatureRecord } from "./geojson-worker-messages.js";
 import { alignTo4Bytes } from "../gpu/byte-align.js";
+import {
+  emptyPreparedPolygonGeometry,
+  triangulatePolygonFeatures,
+  type PolygonFeatureInput,
+} from "../gpu/polygon-triangulation.js";
 
 export function geometryKindForFeature(geometry: GeoJsonFeature["geometry"]): GeometryKind {
   if (geometry === null) return "point";
@@ -113,10 +119,19 @@ export function buildGeoJsonFeatureChunk(
   const records: GeoJsonWorkerFeatureRecord[] = [];
   const resolvedFeatureIds = resolveFeatureIds(slice, globalStartIndex, baseFeatureId);
 
+  // Stage 6.5: chunk-wide ring/part topology, consumed entirely within this function
+  // (fed to worker-side triangulation below) — never sent over the wire itself; see
+  // `PolygonRingAccumulator`'s doc for why raw ring topology doesn't need to survive
+  // `postMessage` once triangulation has already run.
+  const polygonTopology = createPolygonRingAccumulator();
+  const polygonFeatures: PolygonFeatureInput[] = [];
+
   for (let i = 0; i < slice.length; i++) {
     const f = slice[i];
     const featureId = resolvedFeatureIds[i];
     const start = vertexOffset;
+    const partStart = polygonTopology.partRingCounts.length;
+    const ringStart = polygonTopology.ringVertexCounts.length;
     const written = writeFlattenedGeometry(
       f.geometry,
       positions,
@@ -125,8 +140,16 @@ export function buildGeoJsonFeatureChunk(
       featureId,
       defaultStyleId,
       vertexOffset,
+      polygonTopology,
     );
     vertexOffset += written;
+
+    const partCount = polygonTopology.partRingCounts.length - partStart;
+    const ringCount = polygonTopology.ringVertexCounts.length - ringStart;
+    if (partCount > 0) {
+      polygonFeatures.push({ vertexStart: start, ringStart, ringCount, partStart, partCount });
+    }
+
     records.push({
       id: featureId,
       geometryKind: geometryKindForFeature(f.geometry),
@@ -140,6 +163,18 @@ export function buildGeoJsonFeatureChunk(
     throw new Error(`Internal vertex layout mismatch: ${vertexOffset} vs ${vertexTotal}`);
   }
 
+  const preparedPolygons =
+    polygonFeatures.length > 0
+      ? triangulatePolygonFeatures(
+          positions,
+          featureIds,
+          styleIds,
+          polygonTopology.partRingCounts,
+          polygonTopology.ringVertexCounts,
+          polygonFeatures,
+        )
+      : emptyPreparedPolygonGeometry();
+
   return {
     type: "chunk",
     parseId,
@@ -150,5 +185,11 @@ export function buildGeoJsonFeatureChunk(
     styleIds: styleIds.buffer,
     records,
     ...(tileKey !== undefined ? { tileKey } : {}),
+    polygonVertexCount: preparedPolygons.vertexCount,
+    polygonIndexCount: preparedPolygons.indexCount,
+    polygonPositions: preparedPolygons.positions.buffer,
+    polygonFeatureIds: preparedPolygons.featureIds.buffer,
+    polygonStyleIds: preparedPolygons.styleIds.buffer,
+    polygonIndices: preparedPolygons.indices.buffer,
   };
 }

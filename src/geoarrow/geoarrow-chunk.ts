@@ -5,6 +5,7 @@ import type { GeometryBufferView } from "../core/geometry-buffer.js";
 import { alignTo4Bytes } from "../gpu/byte-align.js";
 import { requireInterleavedPointColumn, tryBorrowInterleavedXYFloat32 } from "./coord-access.js";
 import { writeFlattenedGeoArrowRow } from "./flatten-rows.js";
+import { createPolygonRingAccumulator } from "../parser/geojson-flatten.js";
 import {
   countVerticesGeoArrowChunk,
   geometryKindForGeoArrowData,
@@ -38,6 +39,19 @@ export interface FlattenGeoArrowChunkResult {
    * (Float32 interleaved XY, dim=2, no null geometry rows in chunk).
    */
   readonly positionsReusedArrowBuffer: boolean;
+  /**
+   * Chunk-wide polygon ring/part topology (Stage 6.5), preserved instead of discarded
+   * during flattening. Empty when this chunk has no `"polygon"`/`"multiPolygon"` rows.
+   * Individual records with polygon geometry index into these arrays via their own
+   * `polygonRingRange` (`ringStart`/`ringCount`/`partStart`/`partCount`) — see
+   * `FeatureRecord.polygonRingRange`'s doc. Unlike the GeoJSON/FlatGeobuf/WKB worker
+   * pipeline, this adapter does not triangulate — there is no worker call site for it here
+   * (Stage 6.5 §4 scope), so raw ring topology is exposed rather than consumed.
+   */
+  readonly polygonTopology: {
+    readonly partRingCounts: Uint32Array;
+    readonly ringVertexCounts: Uint32Array;
+  };
 }
 
 /**
@@ -81,6 +95,7 @@ export function flattenGeoArrowGeometryData(
 
   const records: FeatureRecord[] = [];
   let vertexOffset = 0;
+  const polygonTopology = createPolygonRingAccumulator();
 
   for (let row = 0; row < data.length; row++) {
     const featureId = options.baseFeatureId + options.globalFeatureIndexStart + row;
@@ -103,6 +118,8 @@ export function flattenGeoArrowGeometryData(
       continue;
     }
 
+    const partStart = polygonTopology.partRingCounts.length;
+    const ringStart = polygonTopology.ringVertexCounts.length;
     const written = writeFlattenedGeoArrowRow(
       data,
       row,
@@ -112,14 +129,19 @@ export function flattenGeoArrowGeometryData(
       featureId,
       options.defaultStyleId,
       vertexOffset,
+      polygonTopology,
     );
     vertexOffset += written;
+
+    const partCount = polygonTopology.partRingCounts.length - partStart;
+    const ringCount = polygonTopology.ringVertexCounts.length - ringStart;
     records.push({
       id: featureId,
       geometryKind: kind,
       vertexStart: start,
       vertexCount: written,
       properties: Object.freeze({ ...getProps(row) }) as Record<string, unknown>,
+      ...(partCount > 0 ? { polygonRingRange: { ringStart, ringCount, partStart, partCount } } : {}),
     });
   }
 
@@ -134,6 +156,10 @@ export function flattenGeoArrowGeometryData(
     },
     records,
     positionsReusedArrowBuffer,
+    polygonTopology: {
+      partRingCounts: Uint32Array.from(polygonTopology.partRingCounts),
+      ringVertexCounts: Uint32Array.from(polygonTopology.ringVertexCounts),
+    },
   };
 }
 

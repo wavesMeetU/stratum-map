@@ -5,6 +5,40 @@ function xy(p: Position): { x: number; y: number } {
   return { x: p[0], y: p[1] };
 }
 
+/**
+ * Chunk-scoped polygon ring/part topology (Stage 6.5), accumulated across every feature in
+ * a chunk instead of being discarded during flattening. Two flat, growable arrays — never
+ * one object per ring:
+ *
+ * - `ringVertexCounts`: one entry per ring written so far, in write order (matching the
+ *   order rings land in `positions`). Ring 0 of each part is the exterior ring, the rest
+ *   are holes (GeoJSON/WKB/FlatGeobuf convention, preserved by writing rings in source
+ *   order — never reordered).
+ * - `partRingCounts`: one entry per polygon part written so far (in write order). Value =
+ *   how many of the next `ringVertexCounts` entries belong to that part. A `Polygon`
+ *   contributes exactly one part; a `MultiPolygon` contributes one part per constituent
+ *   polygon.
+ *
+ * A feature with no polygon geometry (or an empty `Polygon`/`MultiPolygon`, e.g.
+ * `coordinates: []`) contributes zero entries to either array — negligible cost for the
+ * point/line path, which never passes this accumulator at all.
+ */
+export interface PolygonRingAccumulator {
+  readonly partRingCounts: number[];
+  readonly ringVertexCounts: number[];
+}
+
+export function createPolygonRingAccumulator(): PolygonRingAccumulator {
+  return { partRingCounts: [], ringVertexCounts: [] };
+}
+
+/** Appends one polygon part's ring lengths (`ringLens`, exterior first) to `topology`. */
+function pushPolygonPart(topology: PolygonRingAccumulator, ringLens: readonly number[]): void {
+  if (ringLens.length === 0) return; // empty part (e.g. a Polygon with coordinates: []) — nothing to record
+  for (const len of ringLens) topology.ringVertexCounts.push(len);
+  topology.partRingCounts.push(ringLens.length);
+}
+
 export function geometryKindFor(geom: GeoJsonGeometry): GeometryKind {
   switch (geom.type) {
     case "Point":
@@ -66,7 +100,13 @@ export function countVertices(geom: GeoJsonGeometry | null): number {
 
 /**
  * Writes flattened XY vertices for one geometry. Returns the number of vertices written.
- * Polygon / MultiPolygon: rings are concatenated in GeoJSON order (no duplicate closing point removed).
+ * Polygon / MultiPolygon: rings are concatenated in GeoJSON order (no duplicate closing point
+ * removed) — byte-for-byte identical to before Stage 6.5 regardless of `polygonTopology`.
+ *
+ * `polygonTopology`, when passed, additionally records each ring's/part's boundary (Stage
+ * 6.5) instead of letting it disappear into the flat vertex run — see
+ * `PolygonRingAccumulator`. Omitting it reproduces the pre-Stage-6.5 behavior exactly (no
+ * topology recorded, same vertex output) — used by callers that only need points/lines.
  */
 export function writeFlattenedGeometry(
   geom: GeoJsonGeometry | null,
@@ -76,6 +116,7 @@ export function writeFlattenedGeometry(
   featureId: number,
   styleId: number,
   vertexOffset: number,
+  polygonTopology?: PolygonRingAccumulator,
 ): number {
   if (geom === null) return 0;
 
@@ -90,8 +131,10 @@ export function writeFlattenedGeometry(
     o += 1;
   };
 
-  const writeRing = (ring: Position[]) => {
+  const writeRing = (ring: Position[]): number => {
+    const before = o;
     for (const p of ring) writePos(p);
+    return o - before;
   };
 
   switch (geom.type) {
@@ -107,12 +150,15 @@ export function writeFlattenedGeometry(
     case "MultiLineString":
       for (const line of geom.coordinates) writeRing(line);
       break;
-    case "Polygon":
-      for (const ring of geom.coordinates) writeRing(ring);
+    case "Polygon": {
+      const ringLens = geom.coordinates.map(writeRing);
+      if (polygonTopology) pushPolygonPart(polygonTopology, ringLens);
       break;
+    }
     case "MultiPolygon":
       for (const poly of geom.coordinates) {
-        for (const ring of poly) writeRing(ring);
+        const ringLens = poly.map(writeRing);
+        if (polygonTopology) pushPolygonPart(polygonTopology, ringLens);
       }
       break;
     case "GeometryCollection": {
@@ -126,6 +172,7 @@ export function writeFlattenedGeometry(
           featureId,
           styleId,
           at,
+          polygonTopology,
         );
         at += n;
       }
