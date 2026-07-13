@@ -53,6 +53,13 @@ export interface VisualHarnessApi {
   setZoomScale(scale: number): void;
   /** Re-upload geometry; deterministic per (n, seed). */
   setPointCount(n: number, seed?: number): void;
+  /**
+   * Deterministic 2-point scene isolating the style table: one point at clip x=-0.5 using
+   * style index 0, one at clip x=+0.5 using style index 1, both centered vertically, far
+   * enough apart that their sprites never overlap. Exercises `GpuStyle` array-stride
+   * lookup for a non-zero style index specifically (Stage 6.2.1 regression probe).
+   */
+  setStyleProbe(): void;
   /** Submit another frame (after zoom / dataset changes). */
   render(): void;
 }
@@ -120,6 +127,21 @@ const api: VisualHarnessApi = {
       return;
     }
     applyGeometry(count, sd);
+    renderer.render({ timeMs: performance.now() });
+  },
+  setStyleProbe(): void {
+    if (!renderer) return;
+    columnMajorScale(1, clipMat);
+    renderer.setMapToClipMatrix(clipMat);
+    const positions = new Float32Array([-0.5, 0, 0.5, 0]);
+    const featureIds = new Uint32Array([0, 1]);
+    const styleIds = new Uint16Array([0, 1]);
+    vertexCount = 2;
+    renderer.setGeometry({
+      buffer: { positions, featureIds, styleIds },
+      vertexCount: 2,
+    });
+    state.pointCount = 2;
     renderer.render({ timeMs: performance.now() });
   },
   render(): void {

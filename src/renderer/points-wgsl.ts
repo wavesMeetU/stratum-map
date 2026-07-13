@@ -8,10 +8,20 @@ struct FrameUniforms {
   _pad_lod: vec3<f32>,
 }
 
+/**
+ * No trailing pad field: a trailing \`vec3<f32>\` has 16-byte ALIGNMENT (not just 12-byte
+ * size) per the WGSL memory layout rules, which pushes it out to offset 32 and inflates
+ * this struct to 48 bytes — silently mismatching the JS-side upload code's 32-byte stride
+ * (\`webgpu-points-renderer.ts\`'s \`setStyleTable\`), corrupting every style entry beyond
+ * index 0 (\`style_table[1]\` would read starting at byte 48, landing on style 0's padding
+ * and style 1's own tail instead of style 1's actual color/size). Left bare, \`{color:
+ * vec4<f32>, size_px: f32}\` already rounds up to exactly 32 bytes on its own (struct size
+ * rounds up to its own 16-byte alignment), which is what the JS side assumes. Mirrors the
+ * fix already applied to the analogous \`GpuLineStyle\` in \`lines-wgsl.ts\`.
+ */
 struct GpuStyle {
   color: vec4<f32>,
   size_px: f32,
-  _pad: vec3<f32>,
 }
 
 @group(0) @binding(0) var<uniform> frame: FrameUniforms;

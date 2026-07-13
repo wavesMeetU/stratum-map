@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createCanvas, loadImage } from "canvas";
 import { WEBGPU_CANVAS_SCREENSHOT } from "./visual-baseline";
 
 test.describe.configure({ mode: "serial" });
@@ -12,6 +13,15 @@ async function settleFrames(page: Page): Promise<void> {
         });
       }),
   );
+}
+
+async function samplePixelRgba(png: Buffer, x: number, y: number): Promise<[number, number, number, number]> {
+  const img = await loadImage(png);
+  const c = createCanvas(img.width, img.height);
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(x, y, 1, 1).data;
+  return [d[0], d[1], d[2], d[3]];
 }
 
 interface HarnessSnapshot {
@@ -120,5 +130,70 @@ test.describe("WebGPU visual regression (points)", () => {
     });
     await settleFrames(page);
     await expect(page.locator("#gpu-canvas")).toHaveScreenshot("points-dataset-8000.png", WEBGPU_CANVAS_SCREENSHOT);
+  });
+
+  /**
+   * Regression probe for Stage 6.2.1: `GpuStyle`'s WGSL struct previously included a
+   * trailing `_pad: vec3<f32>` field, which (per WGSL alignment rules) inflated the struct
+   * to a 48-byte array stride, while the JS-side `setStyleTable` upload used a 32-byte
+   * stride. `style_table[0]` still landed on real style-0 data (offset 0 matches in both
+   * layouts), but `style_table[1]` read 16 bytes into what the JS side had written as style
+   * 0's tail + style 1's own head — decoding a color with alpha 0, i.e. fully invisible.
+   * This test isolates exactly that: two non-overlapping points, one per style index,
+   * pixel-probed by decoded color rather than a full-canvas screenshot diff so it fails
+   * deterministically on the underlying defect instead of on incidental AA/GPU drift.
+   */
+  test("style table — style index 0 and style index 1 both render distinct, non-transparent colors", async ({
+    page,
+  }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    await page.evaluate(() => {
+      const h = (globalThis as unknown as { __visualHarness: { setStyleProbe: () => void } }).__visualHarness;
+      h.setStyleProbe();
+    });
+    await settleFrames(page);
+
+    const canvasLocator = page.locator("#gpu-canvas");
+    const box = await canvasLocator.boundingBox();
+    if (!box) {
+      throw new Error("#gpu-canvas has no bounding box");
+    }
+    const png = await canvasLocator.screenshot();
+
+    // Harness places style-0 point at clip x=-0.5 (≈25% width) and style-1 point at clip
+    // x=+0.5 (≈75% width), both vertically centered (clip y=0 ≈ 50% height).
+    const leftX = Math.round(box.width * 0.25);
+    const rightX = Math.round(box.width * 0.75);
+    const midY = Math.round(box.height * 0.5);
+
+    const [style0R, style0G, style0B] = await samplePixelRgba(png, leftX, midY);
+    const [style1R, style1G, style1B] = await samplePixelRgba(png, rightX, midY);
+
+    // Page screenshots always report alpha 255 (opaque page composite) — background vs.
+    // rendered-point is distinguished by brightness, not alpha. Canvas clear color is
+    // near-black (#0a0a0c ≈ rgb(10,10,12)); "rendered" means clearly brighter than that.
+    const BACKGROUND_MAX = 60;
+
+    // Style 0 renders correctly: red-dominant [0.92, 0.28, 0.22, 1.0].
+    expect(style0R).toBeGreaterThan(BACKGROUND_MAX);
+    expect(style0R).toBeGreaterThan(style0G);
+    expect(style0R).toBeGreaterThan(style0B);
+
+    // Style 1 renders correctly: blue-dominant [0.22, 0.58, 0.96, 1.0]. Before the fix, this
+    // pixel was indistinguishable from background (alpha 0 in the shader means nothing was
+    // drawn there) — the exact defect under test.
+    expect(style1B).toBeGreaterThan(BACKGROUND_MAX);
+    expect(style1B).toBeGreaterThan(style1R);
+    expect(style1B).toBeGreaterThan(style1G);
+
+    // Multiple style ids select genuinely different colors, not the same (mis-decoded) one.
+    expect(Math.abs(style0R - style1R) + Math.abs(style0G - style1G) + Math.abs(style0B - style1B)).toBeGreaterThan(
+      60,
+    );
   });
 });
