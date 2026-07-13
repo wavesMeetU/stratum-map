@@ -26,6 +26,7 @@ export default defineConfig({
         "minimal-native": resolve(__dirname, "examples/minimal-native/index.html"),
         "standalone-rendering": resolve(__dirname, "examples/standalone-rendering/index.html"),
         "integration-example": resolve(__dirname, "examples/integration-example/index.html"),
+        "points-lines-demo": resolve(__dirname, "examples/points-lines-demo/index.html"),
       },
     },
   },
