@@ -1,26 +1,30 @@
 /**
- * Points + Lines coexistence example (Stage 6.2 implementation, Stage 6.3 public API).
+ * Points + Lines + Polygons coexistence example (Stage 6.2 lines, Stage 6.6 polygons).
  *
- * Proves the smallest complete LineString rendering vertical slice:
+ * Proves the smallest complete LineString rendering vertical slice, plus (Stage 6.6) the
+ * smallest complete filled-`Polygon` rendering vertical slice:
  * - multiple LineString features render with correct segment extrusion
  * - line width stays visually constant under zoom and rotation
- * - line and point picking both work, independently
- * - WebGpuPointsRenderer and WebGpuLineRenderer coexist in one composited frame with
- *   neither renderer owning or coordinating the other — this file is the coordinator,
- *   both renderers are equal, independent participants sharing one ViewState and one
- *   GPURenderPassEncoder per frame.
+ * - multiple filled Polygon features render via indexed triangle-list draws, including a
+ *   concave polygon and a polygon with a hole, using two distinct fill styles
+ * - line, point, and polygon picking all work independently — polygon picking correctly
+ *   distinguishes a polygon's interior from its hole, and from empty space
+ * - WebGpuPointsRenderer, WebGpuLineRenderer, and WebGpuPolygonRenderer coexist in one
+ *   composited frame with none of the three owning or coordinating the others — this file
+ *   is the coordinator; all three are equal, independent participants sharing one
+ *   ViewState and one GPURenderPassEncoder per frame (polygons drawn first, so point/line
+ *   markers remain visible on top of polygon fills, matching typical map z-ordering).
  *
  * Dataset is small and fixed (no network fetch, no worker) — this is an architectural
  * example, not a benchmark.
  *
  * Stage 6.3 exported the line rendering API (`WebGpuLineRenderer`, `LineStyle`,
  * `buildLineSegments`, `LineSegmentBatch`) from the package's public barrel
- * (`src/index.ts`) — this example imports everything from `"stratum-map"` rather than
- * direct `src/...` paths, doubling as this repo's public-API usage coverage for the line
- * renderer (verified by this example's own smoke/interaction tests): renderer creation,
- * `GeometryBuffer` + `FeatureRecord[]` → `buildLineSegments` LineString preparation,
- * multiple line/point styles, picking, and point/line coexistence, all reachable without
- * touching internal modules.
+ * (`src/index.ts`); polygon rendering (`WebGpuPolygonRenderer`, `PolygonStyle`,
+ * `triangulatePolygonFeatures`) is Stage 6.6's first vertical slice and is intentionally
+ * NOT exported yet — same "prove it before exporting it" precedent Stage 6.2 set for lines.
+ * This example imports line/point symbols from `"stratum-map"` (public) and polygon
+ * symbols directly from `src/...` (internal/experimental), matching that precedent exactly.
  */
 import {
   WebGpuPointsRenderer,
@@ -32,6 +36,9 @@ import {
   type FeatureRecord,
   type GeometryBuffer,
 } from "stratum-map";
+import { WebGpuPolygonRenderer } from "../../src/renderer/webgpu-polygon-renderer.js";
+import { createPolygonRingAccumulator, writeFlattenedGeometry } from "../../src/parser/geojson-flatten.js";
+import { triangulatePolygonFeatures, type PolygonFeatureInput } from "../../src/gpu/polygon-triangulation.js";
 
 // ── deterministic dataset (world units, EPSG:3857-like meters) ─────────────
 
@@ -68,6 +75,88 @@ const LINES: { id: number; coords: [number, number][]; label: string }[] = [
 
 const POINT_LABELS = new Map(POINTS.map((p) => [p.id, p.label]));
 const LINE_LABELS = new Map(LINES.map((l) => [l.id, l.label]));
+
+// Feature id at the GPU-safe ceiling (Stage 5.1.1) — proves high FeatureId picking still
+// decodes correctly through the polygon pick pass, not just small ids.
+const HIGH_FEATURE_ID = 0xfffffffe;
+
+interface PolygonFeatureSpec {
+  readonly id: number;
+  readonly styleId: number;
+  readonly label: string;
+  /** Rings in GeoJSON order: ring 0 = exterior, the rest = holes. */
+  readonly rings: readonly (readonly [number, number][])[];
+}
+
+const POLYGONS: readonly PolygonFeatureSpec[] = [
+  {
+    id: 500,
+    styleId: 0,
+    label: "square",
+    rings: [
+      [
+        [50_000, 300_000],
+        [250_000, 300_000],
+        [250_000, 450_000],
+        [50_000, 450_000],
+        [50_000, 300_000],
+      ],
+    ],
+  },
+  {
+    id: 501,
+    styleId: 0,
+    label: "L-shape (concave)",
+    rings: [
+      [
+        [-580_000, -580_000],
+        [-380_000, -580_000],
+        [-380_000, -480_000],
+        [-480_000, -480_000],
+        [-480_000, -380_000],
+        [-580_000, -380_000],
+        [-580_000, -580_000],
+      ],
+    ],
+  },
+  {
+    id: 502,
+    styleId: 1,
+    label: "frame (hole)",
+    rings: [
+      [
+        [300_000, -580_000],
+        [580_000, -580_000],
+        [580_000, -450_000],
+        [300_000, -450_000],
+        [300_000, -580_000],
+      ],
+      [
+        [380_000, -550_000],
+        [500_000, -550_000],
+        [500_000, -480_000],
+        [380_000, -480_000],
+        [380_000, -550_000],
+      ],
+    ],
+  },
+  {
+    id: HIGH_FEATURE_ID,
+    styleId: 1,
+    label: "high-FeatureId square",
+    rings: [
+      [
+        [-100_000, 50_000],
+        [0, 50_000],
+        [0, 150_000],
+        [-100_000, 150_000],
+        [-100_000, 50_000],
+      ],
+    ],
+  },
+];
+
+const POLYGON_LABELS = new Map(POLYGONS.map((p) => [p.id, p.label]));
 
 // ── geometry construction (no parser/worker needed — data is already flat) ──
 
@@ -115,6 +204,56 @@ function buildLineBuffer(): { buffer: GeometryBuffer; records: FeatureRecord[] }
   return { buffer: { positions, featureIds, styleIds }, records };
 }
 
+/**
+ * Runs the real Stage 6.5 pipeline end to end — `writeFlattenedGeometry` (ring/part
+ * topology preservation) then `triangulatePolygonFeatures` (worker-side-shaped earcut
+ * triangulation) — rather than hand-feeding pre-triangulated data, so this example proves
+ * the concave/hole cases through the actual production code path, not a shortcut.
+ */
+function buildPolygonPreparedGeometry() {
+  let totalVerts = 0;
+  for (const f of POLYGONS) {
+    for (const ring of f.rings) totalVerts += ring.length;
+  }
+
+  const positions = new Float32Array(totalVerts * 2);
+  const featureIds = new Uint32Array(totalVerts);
+  const styleIds = new Uint16Array(totalVerts);
+  const topology = createPolygonRingAccumulator();
+  const polygonFeatures: PolygonFeatureInput[] = [];
+
+  let vertexOffset = 0;
+  for (const f of POLYGONS) {
+    const partStart = topology.partRingCounts.length;
+    const ringStart = topology.ringVertexCounts.length;
+    const written = writeFlattenedGeometry(
+      { type: "Polygon", coordinates: f.rings as [number, number][][] },
+      positions,
+      featureIds,
+      styleIds,
+      f.id,
+      f.styleId,
+      vertexOffset,
+      topology,
+    );
+    const partCount = topology.partRingCounts.length - partStart;
+    const ringCount = topology.ringVertexCounts.length - ringStart;
+    if (partCount > 0) {
+      polygonFeatures.push({ vertexStart: vertexOffset, ringStart, ringCount, partStart, partCount });
+    }
+    vertexOffset += written;
+  }
+
+  return triangulatePolygonFeatures(
+    positions,
+    featureIds,
+    styleIds,
+    topology.partRingCounts,
+    topology.ringVertexCounts,
+    polygonFeatures,
+  );
+}
+
 // ── main ──────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -156,12 +295,28 @@ async function main(): Promise<void> {
   });
   lineRenderer.setPickWidthPx(14);
 
+  // Independent renderer: shares the device/format/canvas, owns none of them. No pick
+  // width concept exists for a filled area (Stage 6.6) — the triangulated interior itself
+  // is the hit region.
+  const polygonRenderer = await WebGpuPolygonRenderer.create({
+    device: pointsRenderer.getDevice(),
+    format: pointsRenderer.getCanvasFormat(),
+    canvas,
+    styles: [
+      { color: [0.35, 0.78, 0.4, 0.75] }, // style 0: green (square, L-shape)
+      { color: [0.75, 0.4, 0.85, 0.75] }, // style 1: violet (frame-with-hole, high-id square)
+    ],
+  });
+
   const pointData = buildPointBuffer();
   pointsRenderer.setGeometry({ buffer: pointData, vertexCount: POINTS.length });
 
   const { buffer: lineBuffer, records: lineRecords } = buildLineBuffer();
   const lineSegments = buildLineSegments(lineBuffer, lineRecords);
   lineRenderer.ingestLineSegments(lineSegments, { chunkKey: "demo-lines" });
+
+  const preparedPolygons = buildPolygonPreparedGeometry();
+  polygonRenderer.ingestPolygonGeometry(preparedPolygons, { chunkKey: "demo-polygons" });
 
   // Zoom 6 gives ~2200km of coverage in a ~900px viewport — comfortable margin around the
   // dataset's +-600km extent.
@@ -188,7 +343,11 @@ async function main(): Promise<void> {
         { view: textureView, clearValue: { r: 0.04, g: 0.06, b: 0.1, a: 1 }, loadOp: "clear", storeOp: "store" },
       ],
     });
-    // Both renderers record into the SAME pass — neither clears nor owns the other's output.
+    // All three renderers record into the SAME pass — none clears nor owns the others'
+    // output. Polygons first, so point/line markers stay visible on top of polygon fills
+    // (typical map z-ordering) — draw order, not a depth buffer, resolves overlap, exactly
+    // like every other draw-order decision in this codebase.
+    polygonRenderer.encodeRenderPass(pass, viewState, { timeMs: performance.now() });
     lineRenderer.encodeRenderPass(pass, viewState, { timeMs: performance.now() });
     pointsRenderer.encodeRenderPass(pass, { timeMs: performance.now() });
     pass.end();
@@ -249,6 +408,8 @@ async function main(): Promise<void> {
   canvas.addEventListener("click", async (e) => {
     const [bx, by] = cssToBacking(e);
     // No shared picking coordinator: try each independent renderer's own pick pass.
+    // Polygons are tried last — the largest, "background-most" targets, matching the
+    // z-order points/lines are drawn on top with.
     const lineHit = await lineRenderer.pickFeatureIdAtCanvasPixel(bx, by, viewState);
     if (lineHit !== null && LINE_LABELS.has(lineHit)) {
       pickEl.textContent = `line #${lineHit} (${LINE_LABELS.get(lineHit)})`;
@@ -257,6 +418,11 @@ async function main(): Promise<void> {
     const pointHit = await pointsRenderer.pickFeatureIdAtCanvasPixel(bx, by);
     if (pointHit !== null && POINT_LABELS.has(pointHit)) {
       pickEl.textContent = `point #${pointHit} (${POINT_LABELS.get(pointHit)})`;
+      return;
+    }
+    const polygonHit = await polygonRenderer.pickFeatureIdAtCanvasPixel(bx, by, viewState);
+    if (polygonHit !== null && POLYGON_LABELS.has(polygonHit)) {
+      pickEl.textContent = `polygon #${polygonHit} (${POLYGON_LABELS.get(polygonHit)})`;
       return;
     }
     pickEl.textContent = "—";

@@ -152,10 +152,12 @@ test.describe("points-lines-demo interaction tests", () => {
     await page.waitForTimeout(200);
     await expect(page.locator("#pick-display")).toHaveText(/line #101/);
 
-    // A point that is on-canvas but clearly away from every point/line feature must miss
-    // (world coordinates far off-canvas would leave the click landing outside the
-    // canvas element entirely, which wouldn't exercise picking at all).
-    const emptyPx = worldToCssPx(500_000, -500_000, zoom, rotation, center, viewport);
+    // A point that is on-canvas but clearly away from every point/line/polygon feature must
+    // miss (world coordinates far off-canvas would leave the click landing outside the
+    // canvas element entirely, which wouldn't exercise picking at all). (500000, -500000)
+    // was used here before Stage 6.6 added the "frame (hole)" polygon, which now legitimately
+    // covers that coordinate — (500000, 500000) is clear of every point/line/polygon feature.
+    const emptyPx = worldToCssPx(500_000, 500_000, zoom, rotation, center, viewport);
     await page.mouse.click(box.x + emptyPx.x, box.y + emptyPx.y);
     await page.waitForTimeout(200);
     await expect(page.locator("#pick-display")).toHaveText("—");

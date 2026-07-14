@@ -11,6 +11,11 @@ import {
   type WebGpuLineRenderer,
 } from "../../src/renderer/webgpu-line-renderer.js";
 import type { LineSegmentBatch } from "../../src/gpu/line-segment-prep.js";
+import {
+  createWebGpuPolygonRenderer,
+  type WebGpuPolygonRenderer,
+} from "../../src/renderer/webgpu-polygon-renderer.js";
+import type { PreparedPolygonGeometry } from "../../src/gpu/polygon-triangulation.js";
 
 const COL_MAJOR_IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
@@ -78,6 +83,56 @@ export interface LineEvictionScenarioResult {
   readonly chunkCountAfter: number;
 }
 
+/**
+ * One independent, non-degenerate triangle per `triangleCount` unit — deterministic byte
+ * size per triangle (Stage 6.6 eviction/replacement probes), tightly matching
+ * `PreparedPolygonGeometry`'s contract exactly as `triangulatePolygonFeatures` would
+ * produce it, without needing a real ring/earcut round trip for a synthetic test fixture.
+ */
+function makeSyntheticPolygonGeometry(seedOffset: number, triangleCount = 1): PreparedPolygonGeometry {
+  const vertexCount = triangleCount * 3;
+  const positions = new Float32Array(vertexCount * 2);
+  const featureIds = new Uint32Array(vertexCount);
+  const styleIds = new Uint16Array(vertexCount);
+  const indices = new Uint32Array(vertexCount);
+  for (let t = 0; t < triangleCount; t++) {
+    const base = t * 3;
+    positions[base * 2] = seedOffset + t;
+    positions[base * 2 + 1] = 0;
+    positions[(base + 1) * 2] = seedOffset + t + 1;
+    positions[(base + 1) * 2 + 1] = 0;
+    positions[(base + 2) * 2] = seedOffset + t + 0.5;
+    positions[(base + 2) * 2 + 1] = 1;
+    const fid = seedOffset * 100 + t;
+    featureIds[base] = fid;
+    featureIds[base + 1] = fid;
+    featureIds[base + 2] = fid;
+    indices[base] = base;
+    indices[base + 1] = base + 1;
+    indices[base + 2] = base + 2;
+  }
+  return { vertexCount, indexCount: vertexCount, positions, featureIds, styleIds, indices };
+}
+
+export interface PolygonEvictionScenarioResult {
+  readonly keysBefore: readonly string[];
+  readonly residentBytesBefore: number;
+  readonly bytesPerChunk: number;
+  readonly evicted: readonly string[];
+  readonly keysAfter: readonly string[];
+  readonly residentBytesAfter: number;
+  readonly chunkCountAfter: number;
+}
+
+export interface PolygonReplacementScenarioResult {
+  readonly residentBytesAfterFirst: number;
+  readonly residentBytesAfterReplace: number;
+  readonly chunkCountAfterFirst: number;
+  readonly chunkCountAfterReplace: number;
+  readonly bytesForSmall: number;
+  readonly bytesForLarge: number;
+}
+
 export interface VisualHarnessApi {
   readonly ready: boolean;
   readonly skipped: boolean;
@@ -103,12 +158,22 @@ export interface VisualHarnessApi {
    * accounting without re-deriving GPU buffer sizes on the Node side.
    */
   runLineEvictionScenario(ingestCount: number, evictCount: number): LineEvictionScenarioResult;
+  /** Stage 6.6 analog of `runLineEvictionScenario`, for `WebGpuPolygonRenderer`. */
+  runPolygonEvictionScenario(ingestCount: number, evictCount: number): PolygonEvictionScenarioResult;
+  /**
+   * Stage 6.6: ingests one small synthetic polygon chunk under a fixed key, records
+   * resident bytes/chunk count, then ingests a larger synthetic chunk under the SAME key
+   * (replace) and records again — proves replacement subtracts the old chunk's bytes
+   * before adding the new one's, rather than double-counting.
+   */
+  runPolygonReplacementScenario(): PolygonReplacementScenarioResult;
   /** Submit another frame (after zoom / dataset changes). */
   render(): void;
 }
 
 let renderer: WebGpuPointsRenderer | null = null;
 let lineRenderer: WebGpuLineRenderer | null = null;
+let polygonRenderer: WebGpuPolygonRenderer | null = null;
 const clipMat = new Float32Array(16);
 let vertexCount = 0;
 let currentSeed = 0x5f3759df;
@@ -208,6 +273,50 @@ const api: VisualHarnessApi = {
     const chunkCountAfter = lineRenderer.getChunkCount();
     return { keysBefore, residentBytesBefore, bytesPerChunk, evicted, keysAfter, residentBytesAfter, chunkCountAfter };
   },
+  runPolygonEvictionScenario(ingestCount: number, evictCount: number): PolygonEvictionScenarioResult {
+    if (!polygonRenderer) {
+      throw new Error("polygon renderer not initialized");
+    }
+    polygonRenderer.clearChunks();
+    for (let i = 0; i < ingestCount; i++) {
+      polygonRenderer.ingestPolygonGeometry(
+        makeSyntheticPolygonGeometry(i),
+        { chunkKey: `poly-evict-test-${i}` },
+      );
+    }
+    const keysBefore = [...polygonRenderer.getChunkKeys()];
+    const residentBytesBefore = polygonRenderer.getResidentBytes();
+    const bytesPerChunk = keysBefore.length > 0 ? polygonRenderer.getChunkByteSize(keysBefore[0]!) : 0;
+    const evicted = polygonRenderer.evictOldestChunks(evictCount);
+    const keysAfter = [...polygonRenderer.getChunkKeys()];
+    const residentBytesAfter = polygonRenderer.getResidentBytes();
+    const chunkCountAfter = polygonRenderer.getChunkCount();
+    return { keysBefore, residentBytesBefore, bytesPerChunk, evicted, keysAfter, residentBytesAfter, chunkCountAfter };
+  },
+  runPolygonReplacementScenario(): PolygonReplacementScenarioResult {
+    if (!polygonRenderer) {
+      throw new Error("polygon renderer not initialized");
+    }
+    polygonRenderer.clearChunks();
+    polygonRenderer.ingestPolygonGeometry(makeSyntheticPolygonGeometry(0, 1), { chunkKey: "replace-test" });
+    const residentBytesAfterFirst = polygonRenderer.getResidentBytes();
+    const chunkCountAfterFirst = polygonRenderer.getChunkCount();
+    const bytesForSmall = polygonRenderer.getChunkByteSize("replace-test");
+
+    polygonRenderer.ingestPolygonGeometry(makeSyntheticPolygonGeometry(10, 4), { chunkKey: "replace-test" });
+    const residentBytesAfterReplace = polygonRenderer.getResidentBytes();
+    const chunkCountAfterReplace = polygonRenderer.getChunkCount();
+    const bytesForLarge = polygonRenderer.getChunkByteSize("replace-test");
+
+    return {
+      residentBytesAfterFirst,
+      residentBytesAfterReplace,
+      chunkCountAfterFirst,
+      chunkCountAfterReplace,
+      bytesForSmall,
+      bytesForLarge,
+    };
+  },
   render(): void {
     renderer?.render({ timeMs: performance.now() });
   },
@@ -249,6 +358,13 @@ async function main(): Promise<void> {
     // Shares the points renderer's device/format (Stage 6.2 coexistence precedent); never
     // rendered on-screen here — only exercised for its chunk-residency contract (Stage 6.3).
     lineRenderer = await createWebGpuLineRenderer({
+      device: renderer.getDevice(),
+      format: renderer.getCanvasFormat(),
+      canvas,
+    });
+    // Same sharing precedent as lineRenderer above; never rendered on-screen here — only
+    // exercised for its chunk-residency contract (Stage 6.6).
+    polygonRenderer = await createWebGpuPolygonRenderer({
       device: renderer.getDevice(),
       format: renderer.getCanvasFormat(),
       canvas,

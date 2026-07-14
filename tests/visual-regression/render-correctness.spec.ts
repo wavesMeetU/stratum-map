@@ -299,3 +299,140 @@ test.describe("WebGPU line renderer chunk eviction (points+lines harness)", () =
     expect(result.residentBytesBefore - result.residentBytesAfter).toBe(4 * result.bytesPerChunk);
   });
 });
+
+interface PolygonEvictionScenarioResult {
+  readonly keysBefore: readonly string[];
+  readonly residentBytesBefore: number;
+  readonly bytesPerChunk: number;
+  readonly evicted: readonly string[];
+  readonly keysAfter: readonly string[];
+  readonly residentBytesAfter: number;
+  readonly chunkCountAfter: number;
+}
+
+interface PolygonReplacementScenarioResult {
+  readonly residentBytesAfterFirst: number;
+  readonly residentBytesAfterReplace: number;
+  readonly chunkCountAfterFirst: number;
+  readonly chunkCountAfterReplace: number;
+  readonly bytesForSmall: number;
+  readonly bytesForLarge: number;
+}
+
+async function runPolygonEvictionScenario(
+  page: Page,
+  ingestCount: number,
+  evictCount: number,
+): Promise<PolygonEvictionScenarioResult> {
+  return page.evaluate(
+    ({ ingestCount, evictCount }) => {
+      const h = (globalThis as unknown as {
+        __visualHarness: { runPolygonEvictionScenario: (i: number, e: number) => PolygonEvictionScenarioResult };
+      }).__visualHarness;
+      return h.runPolygonEvictionScenario(ingestCount, evictCount);
+    },
+    { ingestCount, evictCount },
+  );
+}
+
+async function runPolygonReplacementScenario(page: Page): Promise<PolygonReplacementScenarioResult> {
+  return page.evaluate(() => {
+    const h = (globalThis as unknown as {
+      __visualHarness: { runPolygonReplacementScenario: () => PolygonReplacementScenarioResult };
+    }).__visualHarness;
+    return h.runPolygonReplacementScenario();
+  });
+}
+
+/**
+ * Stage 6.6: `WebGpuPolygonRenderer` chunk-residency coverage — `evictOldestChunks(count)`
+ * (mirrors the line renderer's proven eviction contract exactly, independently
+ * implemented) and replacement byte accounting (indexed geometry adds a fourth,
+ * index-buffer term to `chunkByteSize`; this proves replacement still subtracts the old
+ * chunk's full size — including its index buffer — before adding the new one's).
+ */
+test.describe("WebGPU polygon renderer chunk residency (points+lines+polygons harness)", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 480 });
+  });
+
+  test("zero count evicts nothing and leaves residency unchanged", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runPolygonEvictionScenario(page, 5, 0);
+
+    expect(result.evicted).toEqual([]);
+    expect(result.keysAfter).toEqual(result.keysBefore);
+    expect(result.residentBytesAfter).toBe(result.residentBytesBefore);
+    expect(result.chunkCountAfter).toBe(5);
+  });
+
+  test("positive count evicts exactly that many, oldest-ingested first", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runPolygonEvictionScenario(page, 5, 2);
+
+    expect(result.evicted).toEqual(["poly-evict-test-0", "poly-evict-test-1"]);
+    expect(result.keysAfter).toEqual(["poly-evict-test-2", "poly-evict-test-3", "poly-evict-test-4"]);
+    expect(result.chunkCountAfter).toBe(3);
+  });
+
+  test("count larger than residency evicts everything and stops cleanly (no throw, no over-eviction)", async ({
+    page,
+  }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runPolygonEvictionScenario(page, 3, 10);
+
+    expect(result.evicted).toEqual(["poly-evict-test-0", "poly-evict-test-1", "poly-evict-test-2"]);
+    expect(result.keysAfter).toEqual([]);
+    expect(result.chunkCountAfter).toBe(0);
+    expect(result.residentBytesAfter).toBe(0);
+  });
+
+  test("byte accounting (including the index buffer) matches remaining chunk count exactly", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runPolygonEvictionScenario(page, 6, 4);
+
+    expect(result.bytesPerChunk).toBeGreaterThan(0);
+    expect(result.residentBytesBefore).toBe(6 * result.bytesPerChunk);
+    expect(result.chunkCountAfter).toBe(2);
+    expect(result.residentBytesAfter).toBe(2 * result.bytesPerChunk);
+    expect(result.residentBytesBefore - result.residentBytesAfter).toBe(4 * result.bytesPerChunk);
+  });
+
+  test("replacement under the same key does not double-count bytes", async ({ page }) => {
+    const r = await gotoHarness(page);
+    if (r.skip) {
+      test.skip(true, r.reason ?? "WebGPU not available");
+      return;
+    }
+
+    const result = await runPolygonReplacementScenario(page);
+
+    expect(result.chunkCountAfterFirst).toBe(1);
+    expect(result.chunkCountAfterReplace).toBe(1); // still one chunk — replaced, not appended
+    expect(result.residentBytesAfterFirst).toBe(result.bytesForSmall);
+    // The larger replacement's resident total must equal exactly its own size — not
+    // small + large (double-counted) and not stale (still reporting the small chunk's size).
+    expect(result.residentBytesAfterReplace).toBe(result.bytesForLarge);
+    expect(result.bytesForLarge).toBeGreaterThan(result.bytesForSmall);
+  });
+});
