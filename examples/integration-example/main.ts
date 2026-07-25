@@ -16,10 +16,9 @@
  * It does not embed a live OpenLayers map.
  */
 
-import { WebGpuPointsRenderer, MapController, ViewState, type RenderMode } from '../../src/index.js';
+import { WebGpuPointsRenderer, MapController, ViewState } from '../../src/index.js';
 
-// Track current mode and shared controller
-let currentMode: RenderMode = 'openlayers';
+// Shared controller across mode demos
 let sharedController: MapController | null = null;
 
 /**
@@ -85,7 +84,7 @@ async function exampleOpenLayersMode(): Promise<MapController> {
   const controller = new MapController({
     renderer,
     mode: 'openlayers',
-    onBeforeRender: (frameIndex, timestamp) => {
+    onBeforeRender: (frameIndex) => {
       console.log(`Frame ${frameIndex} (OpenLayers mode)`);
     }
   });
@@ -115,7 +114,6 @@ async function exampleOpenLayersMode(): Promise<MapController> {
     }
   }, 100);
 
-  currentMode = 'openlayers';
   console.log('Mode: OpenLayers-managed');
   return controller;
 }
@@ -161,17 +159,24 @@ async function exampleStandaloneMode(): Promise<MapController> {
     renderer,
     mode: 'standalone',
     initialViewState,
-    onBeforeRender: (frameIndex, timestamp) => {
+    onBeforeRender: (frameIndex) => {
       console.log(`Frame ${frameIndex} (Standalone mode)`);
     }
   });
 
-  // Resize handler for standalone mode
+  // Resize handler for standalone mode.
+  // In standalone mode MapController.handleResize only updates the ViewState
+  // viewport — the integrator owns the canvas backing store (see the
+  // standalone-rendering example) — so size it to the display here.
   const resizeObserver = new ResizeObserver(() => {
     const { width, height } = container.getBoundingClientRect();
     controller.handleResize(width, height);
+    renderer.resizeToDisplaySize();
   });
   resizeObserver.observe(container);
+
+  // Size the canvas backing store before the first frame (observer fires async).
+  renderer.resizeToDisplaySize();
 
   // Start render loop
   controller.startRenderLoop();
@@ -208,7 +213,6 @@ async function exampleStandaloneMode(): Promise<MapController> {
   // Store intervals for cleanup
   (controller as any)._demoIntervals = [panInterval, zoomInterval];
 
-  currentMode = 'standalone';
   console.log('Mode: Standalone');
   return controller;
 }
@@ -225,8 +229,6 @@ function exampleModeSwitching() {
   // In a real application, you might start in OpenLayers mode
   // and provide a user option to switch to standalone mode
   // or vice versa
-
-  const canvas = document.getElementById('map-canvas') as HTMLCanvasElement;
 
   // Simulate mode switching button
   const toggleButton = document.createElement('button');

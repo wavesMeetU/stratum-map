@@ -12,6 +12,8 @@ cell_tower.json
 cell_towers.csv
 *.csv
 *.json
+# TypeScript config files are source, not data — keep them tracked
+!tsconfig*.json
 
 # Local config
 *.local.json

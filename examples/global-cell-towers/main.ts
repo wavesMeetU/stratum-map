@@ -1,4 +1,4 @@
-import { WebGpuPointsRenderer, ViewState, panByPixels, zoomToward } from "../../src/index.js";
+import { WebGpuPointsRenderer, ViewState, panByPixels, zoomToward, type PointStyle } from "../../src/index.js";
 
 // ── constants ──────────────────────────────────────────────────
 
@@ -10,10 +10,10 @@ const RADIO_NAMES = ["NR", "LTE", "UMTS", "GSM"] as const;
 // Radio type styling: NR=blue, LTE=green, UMTS=orange, GSM=brown
 // Full opacity (alpha=1.0) for consistent visibility across all types
 const BASE_STYLES = [
-  { color: [0.20, 0.60, 1.00, 1.00] as const, sizePx: 6.0, glow: 1.0 }, // NR (5G)
-  { color: [0.00, 0.80, 0.40, 1.00] as const, sizePx: 5.0, glow: 0.9 }, // LTE (4G)
-  { color: [1.00, 0.60, 0.00, 1.00] as const, sizePx: 4.5, glow: 0.8 }, // UMTS (3G)
-  { color: [0.75, 0.35, 0.15, 1.00] as const, sizePx: 4.0, glow: 0.7 }, // GSM (2G)
+  { color: [0.20, 0.60, 1.00, 1.00] as const, sizePx: 6.0 }, // NR (5G)
+  { color: [0.00, 0.80, 0.40, 1.00] as const, sizePx: 5.0 }, // LTE (4G)
+  { color: [1.00, 0.60, 0.00, 1.00] as const, sizePx: 4.5 }, // UMTS (3G)
+  { color: [0.75, 0.35, 0.15, 1.00] as const, sizePx: 4.0 }, // GSM (2G)
 ];
 
 // Cinematic dark atmospheric background for telecom visualization
@@ -113,7 +113,7 @@ async function loadTowerData(onProgress: (pct: number, label: string) => void): 
 
 // ── zoom-dependent sizing ──────────────────────────────────────
 
-function buildStyleTable(styleVisible: boolean[], zoom: number): typeof BASE_STYLES {
+function buildStyleTable(styleVisible: boolean[], zoom: number): PointStyle[] {
   // Scale point size with zoom — smaller at low zoom (density), larger at high zoom (detail)
   const zoomScale = Math.pow(1.08, Math.max(zoom - INITIAL_ZOOM, 0));
 
@@ -122,19 +122,8 @@ function buildStyleTable(styleVisible: boolean[], zoom: number): typeof BASE_STY
     return {
       color: [...s.color.slice(0, 3), visible ? s.color[3] : 0.0] as [number, number, number, number],
       sizePx: visible ? s.sizePx * zoomScale : 0.5,
-      glow: visible ? s.glow : 0,
     };
   });
-}
-
-function lodStrideForZoom(zoom: number): number {
-  if (zoom >= 6) return 1;      // all towers
-  if (zoom >= 5) return 2;      // 50%
-  if (zoom >= 4) return 4;      // 25%
-  if (zoom >= 3) return 8;      // 12.5%
-  if (zoom >= 2) return 16;     // 6.25%
-  if (zoom >= 1) return 32;     // 3.125%
-  return 64;                    // 1.56% at world view
 }
 
 // ── main ───────────────────────────────────────────────────────

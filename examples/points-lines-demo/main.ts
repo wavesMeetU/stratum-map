@@ -23,8 +23,9 @@
  * (`src/index.ts`); polygon rendering (`WebGpuPolygonRenderer`, `PolygonStyle`,
  * `triangulatePolygonFeatures`) is Stage 6.6's first vertical slice and is intentionally
  * NOT exported yet — same "prove it before exporting it" precedent Stage 6.2 set for lines.
- * This example imports line/point symbols from `"stratum-map"` (public) and polygon
- * symbols directly from `src/...` (internal/experimental), matching that precedent exactly.
+ * This example imports line/point symbols from the public barrel (`../../src/index.js`)
+ * and polygon symbols directly from `src/...` (internal/experimental), matching that
+ * precedent exactly.
  */
 import {
   WebGpuPointsRenderer,
@@ -35,7 +36,7 @@ import {
   zoomToward,
   type FeatureRecord,
   type GeometryBuffer,
-} from "stratum-map";
+} from "../../src/index.js";
 import { WebGpuPolygonRenderer } from "../../src/renderer/webgpu-polygon-renderer.js";
 import { createPolygonRingAccumulator, writeFlattenedGeometry } from "../../src/parser/geojson-flatten.js";
 import { triangulatePolygonFeatures, type PolygonFeatureInput } from "../../src/gpu/polygon-triangulation.js";

@@ -81,7 +81,6 @@ async function main() {
     renderer.setStyleTable([{
       color: [0, 0.5, 1, 1] as const, // Blue
       sizePx: 4,
-      glow: 0
     }]);
 
     // Setup UI

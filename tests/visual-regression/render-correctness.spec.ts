@@ -61,6 +61,38 @@ async function gotoHarness(page: Page): Promise<{ skip: boolean; reason?: string
   return { skip: false };
 }
 
+// ── WebGPU prerequisite (fail-closed in CI) ─────────────────────────────
+/**
+ * The visual suite asserts nothing unless the harness can acquire a WebGPU
+ * adapter and paint. Outside CI (local dev without a usable GPU) we skip so the
+ * suite isn't blocked. In CI we MUST fail closed: a green run that skipped every
+ * rendering assertion — e.g. headless Chrome with no usable adapter — hides the
+ * fact that nothing was tested.
+ *
+ * `process.env.CI` is the same signal `playwright.config.ts` uses for
+ * `reuseExistingServer`.
+ */
+const FAIL_CLOSED_WHEN_NO_WEBGPU = process.env.CI !== undefined;
+
+async function requireWebGpuOrSkip(page: Page): Promise<void> {
+  const r = await gotoHarness(page);
+  if (!r.skip) return;
+  if (FAIL_CLOSED_WHEN_NO_WEBGPU) {
+    throw new Error(
+      "Visual regression tests require WebGPU, but no adapter was available. " +
+        `The suite did not execute rendering assertions. (harness: ${r.reason ?? "unknown"})`,
+    );
+  }
+  test.skip(true, r.reason ?? "WebGPU not available");
+}
+
+// Runs first (serial mode → file order): the single, early CI gate. If WebGPU is
+// unavailable under CI this is the one failure; the remaining tests then skip on
+// the same condition instead of producing 13 repetitive failures.
+test("prerequisite — WebGPU adapter available", async ({ page }) => {
+  await requireWebGpuOrSkip(page);
+});
+
 test.describe("WebGPU visual regression (points)", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 480 });
