@@ -142,24 +142,22 @@ function setupMouseInteraction(canvas: HTMLCanvasElement): void {
   // Double-click zoom to cursor
   canvas.addEventListener("dblclick", (e) => {
     const rect = canvas.getBoundingClientRect();
+    // CSS pixels relative to the canvas (same space as viewportSize)
     const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top; // FIXED: was rect.top - rect.top
+    const y = e.clientY - rect.top;
 
-    // Convert screen position to world position
+    // Convert screen position to absolute world position.
+    // zoomToward() expects a world-coordinate anchor, so the offset from
+    // the viewport center must be added to the current world center.
     const viewState = controller.getViewState();
-    const width = viewState.viewportSize[0];
-    const height = viewState.viewportSize[1];
+    const [width, height] = viewState.viewportSize;
     const resolution = viewState.getResolution();
+    const dx = x - width / 2;
+    const dy = y - height / 2;
 
-    // Screen to world conversion
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const dx = x - centerX;
-    const dy = y - centerY;
-
-    // Account for screen Y flip in ViewState transformations
-    const worldX = dx * resolution;
-    const worldY = -dy * resolution;
+    // Screen Y is flipped relative to world Y
+    const worldX = viewState.center[0] + dx * resolution;
+    const worldY = viewState.center[1] - dy * resolution;
 
     controller.zoomToward(2.0, worldX, worldY);
     updateUI();
@@ -168,13 +166,12 @@ function setupMouseInteraction(canvas: HTMLCanvasElement): void {
 
 // ── Resize handling ────────────────────────────────────────────────────────
 
-function setupResizeHandling(canvas: HTMLCanvasElement, container: HTMLElement): void {
+function setupResizeHandling(container: HTMLElement): void {
   const resizeObserver = new ResizeObserver(() => {
     const { width, height } = container.getBoundingClientRect();
-    canvas.width = width;
-    canvas.height = height;
 
-    // Use controller's handleResize method
+    // ViewState viewport stays in CSS pixels; the renderer derives the
+    // backing-store size from clientWidth/clientHeight × devicePixelRatio.
     controller.handleResize(width, height);
     renderer.resizeToDisplaySize();
   });
@@ -199,7 +196,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Initialize canvas size
+  // Initialize canvas backing store (CSS size comes from the stylesheet;
+  // the ResizeObserver below re-syncs after layout settles)
   const { width, height } = container.getBoundingClientRect();
   canvas.width = width;
   canvas.height = height;
@@ -245,7 +243,7 @@ async function main(): Promise<void> {
   });
 
   // Setup interactions
-  setupResizeHandling(canvas, container);
+  setupResizeHandling(container);
   setupMouseInteraction(canvas);
 
   // Update UI
